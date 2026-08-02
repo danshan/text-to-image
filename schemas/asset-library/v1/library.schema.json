@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://text-to-image.local/schemas/asset-library/v1/library.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "formatVersion", "libraryId", "createdAt", "hashAlgorithm"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "formatVersion": { "const": 1 },
+    "libraryId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "hashAlgorithm": { "const": "sha256" }
+  }
+}

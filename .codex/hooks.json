@@ -1,0 +1,30 @@
+{
+  "description": "Protect the configured Asset Library and validate it before a Codex turn stops.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/archive-guard.mjs\"",
+            "statusMessage": "Checking Asset Library boundaries",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/archive-guard.mjs\"",
+            "statusMessage": "Validating Asset Library",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

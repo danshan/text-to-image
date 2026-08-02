@@ -1,0 +1,488 @@
+import { readFileSync } from "node:fs";
+import {
+  ArchiveError,
+  assertReferenceImages,
+  type GenerationErrorRecord,
+  type GenerationOutput,
+  type GenerationRecord,
+  type ReferenceImage,
+} from "@text-to-image/domain";
+import { inspectImage } from "./image.js";
+import { defaultRuntimeAdapters, readJson, resolveManagedPath, sha256Bytes } from "./internal.js";
+import {
+  commitTransaction,
+  createTransaction,
+  patchTransaction,
+  readTransaction,
+  stageRecordBytes,
+  stageRecordJson,
+  stagedRecordPath,
+  transitionTransaction,
+  type TransactionOptions,
+} from "./transaction.js";
+import {
+  assertCreationCommitted,
+  assertRevisionCommitted,
+  findAssetRelativePath,
+  readDraft,
+  updateDraft,
+} from "./writer.js";
+import { assertRecordSchema, readCommittedPathIndex } from "./validator.js";
+
+export interface PrepareGenerationRequest {
+  prompt: string;
+  changeInstruction: string;
+  basedOnRevisionId?: string | null;
+  references: ReferenceImage[];
+  replayOfGenerationId?: string | null;
+  tool: {
+    name: string;
+    model: string | null;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface PrepareGenerationResult {
+  transactionId: string;
+  revisionId: string;
+  generationId: string;
+  referencePaths: string[];
+}
+
+export interface CompleteGenerationRequest {
+  toolResult: {
+    model: string | null;
+    parameters: Record<string, unknown>;
+    outputCount: number;
+  };
+}
+
+export interface FailGenerationRequest {
+  error: {
+    code: string;
+    message: string;
+    retryable: boolean;
+  };
+}
+
+export function prepareGeneration(
+  libraryRoot: string,
+  creationId: string,
+  request: PrepareGenerationRequest,
+  options: TransactionOptions = {},
+): PrepareGenerationResult {
+  assertCreationCommitted(libraryRoot, creationId);
+  assertReferenceImages(request.references);
+  if (!request.prompt.trim()) {
+    throw new ArchiveError("ARCHIVE_SCHEMA_INVALID", "Effective Prompt must not be empty.");
+  }
+  const adapters = options.adapters ?? defaultRuntimeAdapters;
+  const draft = readDraft(libraryRoot, creationId);
+  const parentRevisionId =
+    request.basedOnRevisionId === undefined
+      ? draft.metadata.basedOnRevisionId
+      : request.basedOnRevisionId;
+  if (parentRevisionId) {
+    assertRevisionCommitted(libraryRoot, creationId, parentRevisionId);
+  }
+  if (request.replayOfGenerationId) {
+    assertGenerationCommitted(libraryRoot, creationId, request.replayOfGenerationId);
+  }
+  const referencePaths = request.references.map((reference) => {
+    const relativePath = findAssetRelativePath(libraryRoot, reference.assetSha256);
+    const absolutePath = resolveManagedPath(libraryRoot, relativePath);
+    if (sha256Bytes(readFileSync(absolutePath)) !== reference.assetSha256) {
+      throw new ArchiveError(
+        "ARCHIVE_HASH_MISMATCH",
+        "Reference Image payload does not match its content identity.",
+        { assetSha256: reference.assetSha256 },
+      );
+    }
+    return absolutePath;
+  });
+
+  const revisionId = adapters.uuid();
+  const generationId = adapters.uuid();
+  const transaction = createTransaction(
+    libraryRoot,
+    {
+      operation: "generation",
+      creationId,
+      revisionId,
+      generationId,
+      draftContentSha256: draft.contentSha256,
+      request: {
+        prompt: request.prompt,
+        changeInstruction: request.changeInstruction,
+        references: request.references,
+        replayOfGenerationId: request.replayOfGenerationId ?? null,
+        tool: request.tool,
+        outputs: [],
+        startedAt: null,
+      },
+    },
+    options,
+  );
+  const revision = {
+    schemaVersion: 1 as const,
+    id: revisionId,
+    creationId,
+    parentRevisionId,
+    changeInstruction: request.changeInstruction,
+    promptSha256: sha256Bytes(request.prompt),
+    createdAt: adapters.now(),
+  };
+  const base = `creations/${creationId}/revisions/${revisionId}`;
+  stageRecordBytes(
+    libraryRoot,
+    transaction.id,
+    "prompt",
+    `${base}/prompt.md`,
+    Buffer.from(request.prompt, "utf8"),
+    options,
+  );
+  stageRecordJson(
+    libraryRoot,
+    transaction.id,
+    "revision",
+    `${base}/revision.json`,
+    revision,
+    options,
+  );
+  return {
+    transactionId: transaction.id,
+    revisionId,
+    generationId,
+    referencePaths,
+  };
+}
+
+export function markInvocationStarted(
+  libraryRoot: string,
+  transactionId: string,
+  options: TransactionOptions = {},
+): void {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  assertGenerationTransaction(transaction.operation, transactionId);
+  transitionTransaction(
+    libraryRoot,
+    transactionId,
+    "invocation_started",
+    { startedAt: (options.adapters ?? defaultRuntimeAdapters).now() },
+    options,
+  );
+}
+
+export function captureGenerationOutput(
+  libraryRoot: string,
+  transactionId: string,
+  sourcePath: string,
+  options: TransactionOptions = {},
+): GenerationOutput {
+  let transaction = readTransaction(libraryRoot, transactionId);
+  assertGenerationTransaction(transaction.operation, transactionId);
+  if (transaction.state !== "invocation_started" && transaction.state !== "outputs_captured") {
+    throw new ArchiveError(
+      "TRANSACTION_INVALID_STATE",
+      "Output can only be captured after invocation starts.",
+      { transactionId, state: transaction.state },
+    );
+  }
+  const bytes = readFileSync(sourcePath);
+  const inspection = inspectImage(bytes, sourcePath);
+  const assetSha256 = sha256Bytes(bytes);
+  const relativePath = `assets/sha256/${assetSha256.slice(0, 2)}/${assetSha256}.${inspection.extension}`;
+  stageRecordBytes(libraryRoot, transactionId, "image_asset", relativePath, bytes, options);
+  options.failpoints?.hit("after_payload_flush");
+
+  transaction = readTransaction(libraryRoot, transactionId);
+  const outputs = readOutputs(transaction.request.outputs);
+  const output: GenerationOutput = {
+    index: outputs.length,
+    assetSha256,
+    mediaType: inspection.mediaType,
+    width: inspection.width,
+    height: inspection.height,
+  };
+  outputs.push(output);
+  if (transaction.state === "invocation_started") {
+    transitionTransaction(libraryRoot, transactionId, "outputs_captured", { outputs }, options);
+  } else {
+    patchTransaction(libraryRoot, transactionId, { request: { outputs } }, options);
+  }
+  return output;
+}
+
+export function completeGeneration(
+  libraryRoot: string,
+  transactionId: string,
+  request: CompleteGenerationRequest,
+  options: TransactionOptions = {},
+): GenerationRecord {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  const outputs = readOutputs(transaction.request.outputs);
+  if (request.toolResult.outputCount !== outputs.length) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Tool output count does not match captured Output count.",
+      {
+        declared: request.toolResult.outputCount,
+        captured: outputs.length,
+      },
+    );
+  }
+  return finalizeGeneration(
+    libraryRoot,
+    transactionId,
+    {
+      status: "succeeded",
+      outcomeKnown: true,
+      outputs,
+      toolResult: request.toolResult,
+      error: null,
+    },
+    options,
+  );
+}
+
+export function failGeneration(
+  libraryRoot: string,
+  transactionId: string,
+  request: FailGenerationRequest,
+  options: TransactionOptions = {},
+): GenerationRecord {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  const error: GenerationErrorRecord = {
+    code: request.error.code,
+    summary: request.error.message,
+    retryable: request.error.retryable,
+  };
+  return finalizeGeneration(
+    libraryRoot,
+    transactionId,
+    {
+      status: "failed",
+      outcomeKnown: true,
+      outputs: readOutputs(transaction.request.outputs),
+      error,
+    },
+    options,
+  );
+}
+
+export function finalizeGenerationInterrupted(
+  libraryRoot: string,
+  transactionId: string,
+  options: TransactionOptions = {},
+): GenerationRecord {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  return finalizeGeneration(
+    libraryRoot,
+    transactionId,
+    {
+      status: "interrupted",
+      outcomeKnown: false,
+      outputs: readOutputs(transaction.request.outputs),
+      error: {
+        code: "GENERATION_OUTCOME_UNKNOWN",
+        summary: "The image generation result could not be determined.",
+        retryable: false,
+      },
+    },
+    options,
+  );
+}
+
+export function commitGeneration(
+  libraryRoot: string,
+  transactionId: string,
+  options: TransactionOptions = {},
+): {
+  committed: true;
+  commitMarkerPath: string;
+  generation: GenerationRecord;
+  draftUpdated: boolean;
+} {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  assertGenerationTransaction(transaction.operation, transactionId);
+  if (!transaction.creationId || !transaction.generationId || !transaction.revisionId) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation transaction is missing identity fields.",
+      { transactionId },
+    );
+  }
+  const marker = commitTransaction(libraryRoot, transactionId, options);
+  const generationPath = resolveManagedPath(
+    libraryRoot,
+    `creations/${transaction.creationId}/generations/${transaction.generationId}/generation.json`,
+  );
+  const generation = readJson(generationPath) as GenerationRecord;
+  assertRecordSchema(
+    "generation",
+    generation,
+    `creations/${transaction.creationId}/generations/${transaction.generationId}/generation.json`,
+  );
+
+  const currentDraft = readDraft(libraryRoot, transaction.creationId);
+  let draftUpdated = false;
+  if (currentDraft.contentSha256 === transaction.draftContentSha256) {
+    const promptPath = stagedRecordPath(
+      libraryRoot,
+      transactionId,
+      `creations/${transaction.creationId}/revisions/${transaction.revisionId}/prompt.md`,
+    );
+    const prompt = readFileSync(promptPath, "utf8");
+    updateDraft(
+      libraryRoot,
+      transaction.creationId,
+      prompt,
+      currentDraft.contentSha256,
+      transaction.revisionId,
+      options.adapters ?? defaultRuntimeAdapters,
+    );
+    draftUpdated = true;
+  }
+  return {
+    committed: true,
+    commitMarkerPath: `archive/commits/${marker.id}.json`,
+    generation,
+    draftUpdated,
+  };
+}
+
+function finalizeGeneration(
+  libraryRoot: string,
+  transactionId: string,
+  result: {
+    status: GenerationRecord["status"];
+    outcomeKnown: boolean;
+    outputs: GenerationOutput[];
+    toolResult?: CompleteGenerationRequest["toolResult"];
+    error: GenerationErrorRecord | null;
+  },
+  options: TransactionOptions,
+): GenerationRecord {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  assertGenerationTransaction(transaction.operation, transactionId);
+  if (transaction.state !== "invocation_started" && transaction.state !== "outputs_captured") {
+    throw new ArchiveError(
+      "TRANSACTION_INVALID_STATE",
+      "Generation can only be finalized after invocation starts.",
+      { transactionId, state: transaction.state },
+    );
+  }
+  if (!transaction.creationId || !transaction.revisionId || !transaction.generationId) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation transaction is missing identity fields.",
+      { transactionId },
+    );
+  }
+  const references = readReferences(transaction.request.references);
+  const configuredTool = readTool(transaction.request.tool);
+  const startedAt = transaction.request.startedAt;
+  if (typeof startedAt !== "string") {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation transaction has no invocation timestamp.",
+      { transactionId },
+    );
+  }
+  const generation: GenerationRecord = {
+    schemaVersion: 1,
+    id: transaction.generationId,
+    creationId: transaction.creationId,
+    promptRevisionId: transaction.revisionId,
+    replayOfGenerationId:
+      typeof transaction.request.replayOfGenerationId === "string"
+        ? transaction.request.replayOfGenerationId
+        : null,
+    status: result.status,
+    outcomeKnown: result.outcomeKnown,
+    references,
+    outputs: result.outputs,
+    tool: {
+      name: configuredTool.name,
+      model: result.toolResult?.model ?? configuredTool.model,
+      parameters: result.toolResult?.parameters ?? configuredTool.parameters,
+    },
+    startedAt,
+    completedAt: (options.adapters ?? defaultRuntimeAdapters).now(),
+    error: result.error,
+  };
+  const generationPath = `creations/${transaction.creationId}/generations/${transaction.generationId}/generation.json`;
+  stageRecordJson(libraryRoot, transactionId, "generation", generationPath, generation, options);
+  transitionTransaction(
+    libraryRoot,
+    transactionId,
+    "ready_to_commit",
+    { terminalStatus: result.status },
+    options,
+  );
+  return generation;
+}
+
+function assertGenerationCommitted(
+  libraryRoot: string,
+  creationId: string,
+  generationId: string,
+): void {
+  const relativePath = `creations/${creationId}/generations/${generationId}/generation.json`;
+  if (!readCommittedPathIndex(libraryRoot).has(relativePath)) {
+    throw new ArchiveError(
+      "ARCHIVE_CORRUPTION",
+      "Replay source Generation is not committed for this Creation.",
+      { creationId, generationId },
+    );
+  }
+}
+
+function assertGenerationTransaction(operation: string, transactionId: string): void {
+  if (operation !== "generation") {
+    throw new ArchiveError(
+      "TRANSACTION_INVALID_STATE",
+      "Transaction is not a Generation transaction.",
+      { transactionId, operation },
+    );
+  }
+}
+
+function readOutputs(value: unknown): GenerationOutput[] {
+  if (!Array.isArray(value)) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation transaction outputs are malformed.",
+    );
+  }
+  return value as GenerationOutput[];
+}
+
+function readReferences(value: unknown): ReferenceImage[] {
+  if (!Array.isArray(value)) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation transaction references are malformed.",
+    );
+  }
+  const references = value as ReferenceImage[];
+  assertReferenceImages(references);
+  return references;
+}
+
+function readTool(value: unknown): PrepareGenerationRequest["tool"] {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof (value as Record<string, unknown>).name !== "string" ||
+    !Object.prototype.hasOwnProperty.call(value, "model") ||
+    !(value as Record<string, unknown>).parameters ||
+    typeof (value as Record<string, unknown>).parameters !== "object"
+  ) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation transaction tool metadata is malformed.",
+    );
+  }
+  return value as PrepareGenerationRequest["tool"];
+}

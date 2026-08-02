@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://text-to-image.local/schemas/asset-library/v1/transaction.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "operation",
+    "state",
+    "creationId",
+    "revisionId",
+    "generationId",
+    "draftContentSha256",
+    "createdAt",
+    "updatedAt",
+    "stagedRecords",
+    "request"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "operation": {
+      "enum": ["initialize_creation", "checkpoint_revision", "import_asset", "generation"]
+    },
+    "state": { "enum": ["prepared", "invocation_started", "outputs_captured", "ready_to_commit"] },
+    "creationId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "revisionId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "generationId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "draftContentSha256": {
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }]
+    },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "stagedRecords": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "sha256"],
+        "properties": {
+          "kind": { "enum": ["creation", "prompt", "revision", "generation", "image_asset"] },
+          "path": { "$ref": "common.schema.json#/$defs/relativePath" },
+          "sha256": { "$ref": "common.schema.json#/$defs/sha256" }
+        }
+      }
+    },
+    "request": { "type": "object" }
+  }
+}

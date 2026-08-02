@@ -1,0 +1,27 @@
+{
+  "name": "@text-to-image/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "TEXT_TO_IMAGE_PORT=4174 TEXT_TO_IMAGE_DEV_ORIGIN=http://127.0.0.1:5173 tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^9.3.0",
+    "@fastify/static": "^10.1.2",
+    "@text-to-image/api-contract": "0.1.0",
+    "@text-to-image/archive": "0.1.0",
+    "@text-to-image/read-model": "0.1.0",
+    "fastify": "^5.7.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

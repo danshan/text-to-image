@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://text-to-image.local/schemas/asset-library/v1/revision.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "creationId",
+    "parentRevisionId",
+    "changeInstruction",
+    "promptSha256",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "creationId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "parentRevisionId": {
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }]
+    },
+    "changeInstruction": { "type": "string" },
+    "promptSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+  }
+}

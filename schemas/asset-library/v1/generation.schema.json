@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://text-to-image.local/schemas/asset-library/v1/generation.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "creationId",
+    "promptRevisionId",
+    "replayOfGenerationId",
+    "status",
+    "outcomeKnown",
+    "references",
+    "outputs",
+    "tool",
+    "startedAt",
+    "completedAt",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "creationId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "promptRevisionId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "replayOfGenerationId": {
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }]
+    },
+    "status": { "enum": ["succeeded", "failed", "interrupted"] },
+    "outcomeKnown": { "type": "boolean" },
+    "references": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/reference" }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "assetSha256", "mediaType", "width", "height"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "assetSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+          "mediaType": { "enum": ["image/png", "image/jpeg", "image/webp"] },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "model", "parameters"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "model": { "type": ["string", "null"] },
+        "parameters": { "type": "object" }
+      }
+    },
+    "startedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "completedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "summary", "retryable"],
+          "properties": {
+            "code": { "type": "string", "minLength": 1 },
+            "summary": { "type": "string", "minLength": 1 },
+            "retryable": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] },
+      "then": { "properties": { "outcomeKnown": { "const": true }, "error": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": { "properties": { "outcomeKnown": { "const": true }, "error": { "type": "object" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "interrupted" } }, "required": ["status"] },
+      "then": { "properties": { "outcomeKnown": { "const": false } } }
+    }
+  ]
+}

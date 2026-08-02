@@ -1,0 +1,10 @@
+/library/
+/text-to-image.local.json
+**/node_modules/
+**/dist/
+/coverage/
+/playwright-report/
+/test-results/
+/.agents/skills/*-workspace/
+*.tsbuildinfo
+.DS_Store

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://text-to-image.local/schemas/asset-library/v1/image-curation.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "entityRevision",
+    "assetSha256",
+    "tags",
+    "favorite",
+    "rating",
+    "hidden",
+    "note",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "entityRevision": { "type": "integer", "minimum": 1 },
+    "assetSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "tags": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "favorite": { "type": "boolean" },
+    "rating": { "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 5 }, { "type": "null" }] },
+    "hidden": { "type": "boolean" },
+    "note": { "type": "string" },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+  }
+}

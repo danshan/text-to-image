@@ -1,0 +1,7 @@
+interface:
+  display_name: "Generate and Archive"
+  short_description: "Generate images and preserve complete local provenance"
+  default_prompt: "Generate images for a Creation and archive every invocation and output."
+
+policy:
+  allow_implicit_invocation: false

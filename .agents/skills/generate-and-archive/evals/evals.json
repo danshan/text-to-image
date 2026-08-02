@@ -1,0 +1,41 @@
+{
+  "skill_name": "generate-and-archive",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use $generate-and-archive for Creation f69e912d-c504-4278-89d5-4558ba452df0. Generate two portrait variants from its current draft without references.",
+      "expected_output": "Two separate built-in image generation calls are prepared, captured, committed, and reported as two immutable Generations.",
+      "files": [],
+      "expectations": [
+        "The agent checks capabilities, resolves the Library through assetctl, and reports pending recovery work.",
+        "Each variant uses a separate prepare, invocation marker, image_gen call, capture, finalize, and commit sequence.",
+        "Prompt and tool-result payloads are sent through process stdin rather than argv or shell pipelines.",
+        "The final report distinguishes tool success from committed Archive success."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Use $generate-and-archive to generate one image for Creation f69e912d-c504-4278-89d5-4558ba452df0. Use asset 92b7b13cbeef65f8a258d705e19916a5917865543398eff786c749678a2d820a as subject and composition reference. Preserve the silhouette and framing but ignore the background.",
+      "expected_output": "The committed Generation preserves the multi-role Reference Image relation and uses the canonical reference path returned by prepare.",
+      "files": [],
+      "expectations": [
+        "The prepare request records both subject and composition roles with the exact guidance.",
+        "The image_gen call receives referenced_image_paths returned by assetctl rather than an arbitrary input path.",
+        "The agent inspects and archives every returned output even when it observes a quality problem.",
+        "No edit mode, mask, fallback API, or invented model parameter is used."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use $generate-and-archive to recover transaction 9f386ef3-b8ce-4197-ad14-a2fda4c19754. Inspection says it is invocation_started and the image tool result is missing.",
+      "expected_output": "The transaction becomes an interrupted Generation with unknown outcome, without another image generation call.",
+      "files": [],
+      "expectations": [
+        "The agent inspects the transaction before choosing a recovery action.",
+        "The agent does not retry or replay the image generation call.",
+        "The recovery records interrupted with outcomeKnown false and preserves transaction evidence.",
+        "The final report explains why the outcome is unknown."
+      ]
+    }
+  ]
+}

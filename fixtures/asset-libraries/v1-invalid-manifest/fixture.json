@@ -1,0 +1,6 @@
+{
+  "expectedValid": false,
+  "expectedCode": "ARCHIVE_SCHEMA_INVALID",
+  "expectedRelativePath": "library.json",
+  "validationMode": "full"
+}

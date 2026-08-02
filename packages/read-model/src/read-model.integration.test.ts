@@ -1,0 +1,202 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { ReadModel } from "./read-model.js";
+
+const creationId = "f69e912d-c504-4278-89d5-4558ba452df0";
+const revisionId = "1567f72f-7a13-45cd-acd3-84a0090547e1";
+const generationId = "755fc2f9-81a8-4d3a-89c4-3d60ca2ed21d";
+const markerId = "9f386ef3-b8ce-4197-ad14-a2fda4c19754";
+
+const roots: string[] = [];
+
+function json(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function digest(value: string | Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function writeObject(
+  root: string,
+  path: string,
+  content: string | Uint8Array,
+): Promise<{ kind: string; path: string; sha256: string }> {
+  const absolute = join(root, ...path.split("/"));
+  await mkdir(join(absolute, ".."), { recursive: true });
+  await writeFile(absolute, content);
+  const kind = path.endsWith("creation.json")
+    ? "creation"
+    : path.endsWith("revision.json")
+      ? "revision"
+      : path.endsWith("prompt.md")
+        ? "prompt"
+        : path.endsWith("generation.json")
+          ? "generation"
+          : "image_asset";
+  return { kind, path, sha256: digest(content) };
+}
+
+async function fixture(): Promise<{ root: string; assetSha256: string }> {
+  const root = await mkdtemp(join(tmpdir(), "text-to-image-read-model-"));
+  roots.push(root);
+  for (const directory of ["archive/commits", "curation/creations", "curation/images", ".cache"]) {
+    await mkdir(join(root, ...directory.split("/")), { recursive: true });
+  }
+
+  const imageBytes = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const assetSha256 = digest(imageBytes);
+  const prompt = "A quiet portrait with soft side lighting.\n";
+  const creation = json({
+    schemaVersion: 1,
+    id: creationId,
+    createdAt: "2026-08-02T12:01:00.000Z",
+  });
+  const revision = json({
+    schemaVersion: 1,
+    id: revisionId,
+    creationId,
+    parentRevisionId: null,
+    changeInstruction: "Use soft side lighting.",
+    promptSha256: digest(prompt),
+    createdAt: "2026-08-02T12:02:00.000Z",
+  });
+  const generation = json({
+    schemaVersion: 1,
+    id: generationId,
+    creationId,
+    promptRevisionId: revisionId,
+    replayOfGenerationId: null,
+    status: "succeeded",
+    outcomeKnown: true,
+    references: [],
+    outputs: [{ index: 0, assetSha256, mediaType: "image/png", width: 1536, height: 1024 }],
+    tool: { name: "image_gen.imagegen", model: null, parameters: {} },
+    startedAt: "2026-08-02T12:02:05.000Z",
+    completedAt: "2026-08-02T12:03:00.000Z",
+    error: null,
+  });
+
+  const records = [
+    await writeObject(root, `creations/${creationId}/creation.json`, creation),
+    await writeObject(root, `creations/${creationId}/revisions/${revisionId}/prompt.md`, prompt),
+    await writeObject(
+      root,
+      `creations/${creationId}/revisions/${revisionId}/revision.json`,
+      revision,
+    ),
+    await writeObject(
+      root,
+      `creations/${creationId}/generations/${generationId}/generation.json`,
+      generation,
+    ),
+    await writeObject(
+      root,
+      `assets/sha256/${assetSha256.slice(0, 2)}/${assetSha256}.png`,
+      imageBytes,
+    ),
+  ];
+  const marker = json({
+    schemaVersion: 1,
+    id: markerId,
+    operation: "generation",
+    createdAt: "2026-08-02T12:03:01.000Z",
+    records,
+  });
+  await writeFile(join(root, "archive", "commits", `${markerId}.json`), marker);
+  await mkdir(join(root, "creations", creationId), { recursive: true });
+  await writeFile(join(root, "creations", creationId, "prompt-draft.md"), prompt);
+  await writeFile(
+    join(root, "creations", creationId, "prompt-draft.json"),
+    json({
+      schemaVersion: 1,
+      basedOnRevisionId: revisionId,
+      observedContentSha256: digest(prompt),
+      updatedAt: "2026-08-02T12:04:00.000Z",
+    }),
+  );
+  await writeFile(
+    join(root, "curation", "creations", `${creationId}.json`),
+    json({
+      schemaVersion: 1,
+      entityRevision: 1,
+      creationId,
+      title: "Soft Light Portrait",
+      status: "active",
+      tags: ["portrait"],
+      favorite: true,
+      note: "Warm palette next.",
+      updatedAt: "2026-08-02T12:05:00.000Z",
+    }),
+  );
+  await writeFile(
+    join(root, "curation", "images", `${assetSha256}.json`),
+    json({
+      schemaVersion: 1,
+      entityRevision: 2,
+      assetSha256,
+      tags: ["candidate"],
+      favorite: true,
+      rating: 4,
+      hidden: false,
+      note: "Strong composition.",
+      updatedAt: "2026-08-02T12:06:00.000Z",
+    }),
+  );
+  return { root, assetSha256 };
+}
+
+afterEach(async () => {
+  for (const root of roots.splice(0)) {
+    expect(basename(root)).toMatch(/^text-to-image-read-model-/u);
+    await rm(root, { recursive: true });
+  }
+});
+
+describe("ReadModel", () => {
+  it("rebuilds gallery and provenance from committed records", async () => {
+    const { root, assetSha256 } = await fixture();
+    const model = new ReadModel(root);
+    await model.open();
+
+    const gallery = model.listGallery({ q: "soft lighting", limit: 10 });
+    expect(gallery.total).toBe(1);
+    expect(gallery.items[0]).toMatchObject({
+      sha256: assetSha256,
+      creationTitle: "Soft Light Portrait",
+      imported: false,
+      rating: 4,
+      entityRevision: 2,
+    });
+    expect(model.getGeneration(generationId)?.outputs[0]?.assetSha256).toBe(assetSha256);
+    expect(model.getRevisions(creationId)[0]?.prompt).toContain("quiet portrait");
+    expect(await model.status()).toMatchObject({
+      available: true,
+      lagCount: 0,
+      lastIndexedMarker: markerId,
+    });
+    model.close();
+  });
+
+  it("rejects a committed record whose digest changed", async () => {
+    const { root } = await fixture();
+    await writeFile(join(root, "creations", creationId, "creation.json"), "{}\n");
+    const model = new ReadModel(root);
+    await expect(model.open()).rejects.toThrow("digest mismatch");
+  });
+
+  it("continues serving the previous snapshot while a rebuild is in progress", async () => {
+    const { root } = await fixture();
+    const model = new ReadModel(root);
+    await model.open();
+
+    const rebuilding = model.rebuild();
+    expect(model.listGallery({ limit: 10 }).total).toBe(1);
+    await rebuilding;
+    expect(model.listGallery({ limit: 10 }).total).toBe(1);
+    model.close();
+  });
+});

@@ -1,0 +1,51 @@
+{
+  "name": "text-to-image",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "assetctl": "tsx apps/cli/src/main.ts",
+    "dev": "concurrently -k -n server,web \"npm run dev -w @text-to-image/server\" \"npm run dev -w @text-to-image/web\"",
+    "start": "tsx apps/server/src/main.ts",
+    "build": "node scripts/build.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node scripts/test-unit.mjs",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test",
+    "pretest:e2e:serve": "npm run build -w @text-to-image/web",
+    "test:e2e:serve": "tsx scripts/test-e2e-server.mts",
+    "test:performance": "TEXT_TO_IMAGE_PERF_SCALE=release vitest run --config vitest.performance.config.ts",
+    "test:performance:smoke": "vitest run --config vitest.performance.config.ts",
+    "docs:check": "node scripts/docs-check.mjs",
+    "fixtures:validate": "npm run assetctl -- fixtures validate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.1.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "concurrently": "^10.0.4",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "sharp@0.34.5": true,
+    "fsevents@2.3.2": true,
+    "fsevents@2.3.3": true
+  }
+}

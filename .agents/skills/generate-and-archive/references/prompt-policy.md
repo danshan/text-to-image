@@ -4,6 +4,8 @@
 
 effective prompt 是实际发送给 built-in image generation 的完整文本, 也是不可变 Prompt Revision 的 `prompt.md`. `changeInstruction` 只记录用户要求的变化, 两者不能互相替代.
 
+Prompt Draft 是用户维护的当前工作稿. Skill 可以基于 Draft 构造 effective prompt, 但 commit 不得用 effective prompt 替换 Draft 正文或语言; effective prompt 只属于该次不可变 Prompt Revision.
+
 从以下输入构造 effective prompt:
 
 1. 当前 Prompt Draft.

@@ -1,9 +1,20 @@
-import { mkdirSync, rmSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
+import { run as runAssetctlInProcess } from "../../apps/cli/src/main.js";
 import {
   assertReferenceImages,
   captureGenerationOutput,
@@ -19,9 +30,12 @@ import {
   inspectImage,
   listRecoveryTransactions,
   markInvocationStarted,
+  mergeLibrary,
+  persistLibrarySelection,
   prepareGeneration,
   readDraft,
   resolveLibrary,
+  readCommitMarkers,
   updateCreationCuration,
   updateDraft,
   updateImageCuration,
@@ -77,6 +91,224 @@ describe("library resolver", () => {
     expect(resolveLibrary({ gitRoot, cliPath: "./library-link" }).libraryRoot).toBe(
       realpathSync(target),
     );
+  });
+
+  it("persists a canonical local Library selection", () => {
+    const gitRoot = makeTempRoot();
+    mkdirSync(join(gitRoot, ".git"));
+    const libraryRoot = initLibrary(join(gitRoot, "selected-library")).libraryRoot;
+
+    const persisted = persistLibrarySelection(gitRoot, libraryRoot);
+
+    expect(persisted).toEqual({
+      configPath: join(realpathSync(gitRoot), "text-to-image.local.json"),
+      libraryRoot,
+    });
+    expect(JSON.parse(readFileSync(persisted.configPath, "utf8"))).toEqual({
+      library: libraryRoot,
+    });
+    expect(resolveLibrary({ gitRoot })).toMatchObject({
+      libraryRoot,
+      source: "local_config",
+    });
+  });
+
+  it("persists init and select through the CLI without replacing a valid selection on failure", async () => {
+    const gitRoot = makeTempRoot();
+    mkdirSync(join(gitRoot, ".git"));
+    const firstRoot = join(gitRoot, "first-library");
+    const secondRoot = initLibrary(join(gitRoot, "second-library")).libraryRoot;
+
+    const previousCwd = process.cwd();
+    process.chdir(gitRoot);
+    try {
+      expect(
+        await runAssetctlInProcess(["init", "--library", firstRoot, "--format", "json"]),
+      ).toMatchObject({ exitCode: 0 });
+      expect(resolveLibrary({ gitRoot }).libraryRoot).toBe(realpathSync(firstRoot));
+
+      expect(
+        await runAssetctlInProcess([
+          "library",
+          "select",
+          "--library",
+          secondRoot,
+          "--format",
+          "json",
+        ]),
+      ).toMatchObject({ exitCode: 0 });
+      expect(resolveLibrary({ gitRoot }).libraryRoot).toBe(secondRoot);
+
+      const sourceRoot = initLibrary(join(gitRoot, "source-library")).libraryRoot;
+      createCreation(sourceRoot, { title: "CLI merge source" });
+      expect(
+        await runAssetctlInProcess([
+          "library",
+          "merge",
+          "--source",
+          sourceRoot,
+          "--dry-run",
+          "--format",
+          "json",
+        ]),
+      ).toMatchObject({
+        exitCode: 0,
+        value: {
+          dryRun: true,
+          applied: false,
+          imported: { creations: 1 },
+        },
+      });
+
+      const invalidRoot = join(gitRoot, "invalid-library");
+      mkdirSync(invalidRoot);
+      await expect(
+        runAssetctlInProcess(["library", "select", "--library", invalidRoot, "--format", "json"]),
+      ).rejects.toMatchObject({ code: "ARCHIVE_CORRUPTION" });
+      expect(resolveLibrary({ gitRoot }).libraryRoot).toBe(secondRoot);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+});
+
+describe("Library Merge", () => {
+  it("merges a fork atomically and preserves destination mutable state", () => {
+    const ownerRoot = makeTempRoot();
+    const sourceRoot = initLibrary(join(ownerRoot, "source")).libraryRoot;
+    const shared = createCreation(sourceRoot, {
+      title: "Source title",
+      prompt: "Source draft",
+    });
+    const destinationRoot = join(ownerRoot, "destination");
+    cpSync(sourceRoot, destinationRoot, { recursive: true });
+    const destinationDraft = readDraft(destinationRoot, shared.creation.id);
+    updateDraft(
+      destinationRoot,
+      shared.creation.id,
+      "Destination draft",
+      destinationDraft.contentSha256,
+    );
+    updateCreationCuration(destinationRoot, shared.creation.id, 1, {
+      title: "Destination title",
+    });
+    const importedCreation = createCreation(sourceRoot, {
+      title: "Imported creation",
+      prompt: "Imported draft",
+    });
+    const imagePath = join(ownerRoot, "source.png");
+    writeFileSync(imagePath, PNG_1X1);
+    const importedAsset = importImageAsset(sourceRoot, imagePath);
+    const prepared = prepareGeneration(
+      sourceRoot,
+      importedCreation.creation.id,
+      generationRequest(),
+    );
+    markInvocationStarted(sourceRoot, prepared.transactionId);
+    captureGenerationOutput(sourceRoot, prepared.transactionId, imagePath);
+    completeGeneration(sourceRoot, prepared.transactionId, {
+      toolResult: { model: null, parameters: {}, outputCount: 1 },
+    });
+    commitGeneration(sourceRoot, prepared.transactionId);
+    writeFileSync(join(sourceRoot, "inbox", "ignored.txt"), "ignored\n");
+
+    const preview = mergeLibrary(destinationRoot, sourceRoot, { dryRun: true });
+
+    expect(preview).toMatchObject({
+      dryRun: true,
+      applied: false,
+      imported: { creations: 1, revisions: 1, generations: 1, imageAssets: 1 },
+      reused: { creations: 1, revisions: 0, generations: 0, imageAssets: 0 },
+      preservedDestinationCuration: 1,
+      preservedDestinationDraft: 1,
+      ignoredInboxFileCount: 1,
+      transactionId: null,
+    });
+    expect(readCommitMarkers(destinationRoot)).toHaveLength(1);
+
+    const merged = mergeLibrary(destinationRoot, sourceRoot);
+
+    expect(merged.applied).toBe(true);
+    expect(merged.transactionId).toMatch(/^[a-f0-9-]{36}$/u);
+    expect(
+      readCommitMarkers(destinationRoot).find((marker) => marker.id === merged.transactionId)
+        ?.operation,
+    ).toBe("merge_library");
+    expect(readDraft(destinationRoot, shared.creation.id).content).toBe("Destination draft");
+    expect(readDraft(destinationRoot, importedCreation.creation.id).content).toBe("Imported draft");
+    expect(
+      readFileSync(
+        join(destinationRoot, "curation", "creations", `${shared.creation.id}.json`),
+        "utf8",
+      ),
+    ).toContain("Destination title");
+    expect(
+      readFileSync(
+        join(
+          destinationRoot,
+          "assets",
+          "sha256",
+          importedAsset.assetSha256.slice(0, 2),
+          `${importedAsset.assetSha256}.png`,
+        ),
+      ),
+    ).toEqual(PNG_1X1);
+    expectLibraryValid(destinationRoot);
+
+    expect(mergeLibrary(destinationRoot, sourceRoot)).toMatchObject({
+      applied: false,
+      transactionId: null,
+    });
+  });
+
+  it("rejects the same entity UUID with different immutable content", () => {
+    const sourceRoot = makeLibrary();
+    const destinationRoot = makeLibrary();
+    const creationId = "11111111-1111-4111-8111-111111111111";
+    createCreation(
+      sourceRoot,
+      { id: creationId },
+      { adapters: adaptersAt("2026-08-03T01:00:00.000Z") },
+    );
+    createCreation(
+      destinationRoot,
+      { id: creationId },
+      { adapters: adaptersAt("2026-08-03T02:00:00.000Z") },
+    );
+
+    expect(() => mergeLibrary(destinationRoot, sourceRoot)).toThrowError(
+      expect.objectContaining({ code: "ARCHIVE_CONFLICT" }),
+    );
+    expect(readCommitMarkers(destinationRoot)).toHaveLength(1);
+  });
+
+  it("keeps an interrupted merge invisible until recovery publishes its Marker", () => {
+    const sourceRoot = makeLibrary();
+    const destinationRoot = makeLibrary();
+    const creation = createCreation(sourceRoot, {
+      title: "Recoverable merge",
+      prompt: "A staged draft",
+    });
+
+    expect(() =>
+      mergeLibrary(destinationRoot, sourceRoot, {
+        failpoints: {
+          hit(name) {
+            if (name === "before_marker_rename") throw new Error("injected merge failure");
+          },
+        },
+      }),
+    ).toThrow("injected merge failure");
+    expect(readCommitMarkers(destinationRoot)).toHaveLength(0);
+    const pending = listRecoveryTransactions(destinationRoot).find(
+      (transaction) => transaction.operation === "merge_library",
+    );
+    expect(pending?.state).toBe("ready_to_commit");
+
+    commitTransaction(destinationRoot, pending!.transactionId);
+
+    expect(readDraft(destinationRoot, creation.creation.id).content).toBe("A staged draft");
+    expectLibraryValid(destinationRoot);
   });
 });
 
@@ -143,7 +375,7 @@ describe("archive vertical slice", () => {
     expectLibraryValid(libraryRoot);
   });
 
-  it("archives a successful Generation and refreshes an unchanged Draft", () => {
+  it("archives a successful Generation without replacing the unchanged Draft", () => {
     const libraryRoot = makeLibrary();
     const creation = createCreation(libraryRoot, {
       prompt: "A red sphere on linen.",
@@ -176,19 +408,31 @@ describe("archive vertical slice", () => {
         (transaction) => transaction.transactionId === prepared.transactionId,
       ),
     ).toBe(false);
-    expect(readDraft(libraryRoot, creation.creation.id).content).toContain("soft side light");
+    expect(readDraft(libraryRoot, creation.creation.id).content).toBe("A red sphere on linen.");
     expectLibraryValid(libraryRoot);
   });
 
-  it("records known failure and interrupted outcomes as immutable Generations", () => {
+  it("records known failure and interrupted outcomes without replacing the Draft", () => {
     const libraryRoot = makeLibrary();
     const creation = createCreation(libraryRoot, { prompt: "A study." });
     const first = prepareGeneration(libraryRoot, creation.creation.id, generationRequest());
     markInvocationStarted(libraryRoot, first.transactionId);
     failGeneration(libraryRoot, first.transactionId, {
-      error: { code: "TOOL_UNAVAILABLE", message: "Tool unavailable.", retryable: true },
+      error: {
+        code: "IMAGE_GENERATION_SAFETY_REJECTED",
+        message: "The generated result was rejected by safety moderation.",
+        retryable: false,
+        moderation: { stage: "output", categories: ["sexual"] },
+      },
     });
-    expect(commitGeneration(libraryRoot, first.transactionId).generation.status).toBe("failed");
+    expect(commitGeneration(libraryRoot, first.transactionId).generation).toMatchObject({
+      status: "failed",
+      error: {
+        code: "IMAGE_GENERATION_SAFETY_REJECTED",
+        moderation: { stage: "output", categories: ["sexual"] },
+      },
+    });
+    expect(readDraft(libraryRoot, creation.creation.id).content).toBe("A study.");
 
     const second = prepareGeneration(libraryRoot, creation.creation.id, generationRequest());
     markInvocationStarted(libraryRoot, second.transactionId);
@@ -198,7 +442,26 @@ describe("archive vertical slice", () => {
       status: "interrupted",
       outcomeKnown: false,
     });
+    expect(readDraft(libraryRoot, creation.creation.id).content).toBe("A study.");
     expectLibraryValid(libraryRoot);
+  });
+
+  it("rejects unbounded or duplicate moderation categories", () => {
+    const libraryRoot = makeLibrary();
+    const creation = createCreation(libraryRoot, { prompt: "A study." });
+    const prepared = prepareGeneration(libraryRoot, creation.creation.id, generationRequest());
+    markInvocationStarted(libraryRoot, prepared.transactionId);
+
+    expect(() =>
+      failGeneration(libraryRoot, prepared.transactionId, {
+        error: {
+          code: "IMAGE_GENERATION_SAFETY_REJECTED",
+          message: "Rejected.",
+          retryable: false,
+          moderation: { stage: "output", categories: ["sexual", "sexual"] },
+        },
+      }),
+    ).toThrowError(expect.objectContaining({ code: "ARCHIVE_SCHEMA_INVALID" }));
   });
 
   it("keeps pre-marker partial installs invisible and supports idempotent recovery commit", () => {
@@ -300,6 +563,15 @@ function generationRequest() {
   };
 }
 
+function adaptersAt(now: string) {
+  return {
+    now: () => now,
+    uuid: () => randomUUID(),
+    hostname: () => "localhost",
+    pid: process.pid,
+  };
+}
+
 function expectLibraryValid(libraryRoot: string): void {
   const report = validateLibrary(libraryRoot, "full");
   expect(report.diagnostics).toEqual([]);
@@ -308,8 +580,9 @@ function expectLibraryValid(libraryRoot: string): void {
 
 async function runAssetctl(arguments_: string[]): Promise<{ exitCode: number; value: unknown }> {
   const cli = join(process.cwd(), "apps", "cli", "src", "main.ts");
+  const tsxLoader = createRequire(import.meta.url).resolve("tsx");
   return await new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, ["--import", "tsx", cli, ...arguments_], {
+    const child = spawn(process.execPath, ["--import", tsxLoader, cli, ...arguments_], {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
     });

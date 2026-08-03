@@ -1,4 +1,5 @@
 import type { ApiClient } from "../api/client";
+import { GenerationErrorPanel } from "../components/generation-issue";
 import { formatDate } from "../components/image-grid";
 import { RecordError, RecordLoading } from "../components/states";
 import { GenerationStatusBadge } from "../components/status";
@@ -32,12 +33,7 @@ export function GenerationDetailPage({
         </div>
         <GenerationStatusBadge status={generation.status} outcomeKnown={generation.outcomeKnown} />
       </header>
-      {!generation.outcomeKnown && (
-        <div className="inline-warning" role="alert">
-          <strong>Outcome unknown.</strong> The invocation result was lost. This record is
-          interrupted and should not be treated as a known failure.
-        </div>
-      )}
+      {generation.status !== "succeeded" && <GenerationErrorPanel generation={generation} />}
       <div className="generation-layout">
         <div className="generation-main">
           <section className="content-section">
@@ -164,13 +160,6 @@ export function GenerationDetailPage({
               >
                 <code>{generation.replayOfGenerationId}</code>
               </Link>
-            </section>
-          )}
-          {generation.error && (
-            <section className="error-record">
-              <span className="eyebrow">Known failure</span>
-              <h2>Error</h2>
-              <pre>{JSON.stringify(generation.error, null, 2)}</pre>
             </section>
           )}
         </aside>

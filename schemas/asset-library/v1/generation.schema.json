@@ -67,9 +67,23 @@
           "additionalProperties": false,
           "required": ["code", "summary", "retryable"],
           "properties": {
-            "code": { "type": "string", "minLength": 1 },
-            "summary": { "type": "string", "minLength": 1 },
-            "retryable": { "type": "boolean" }
+            "code": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+            "retryable": { "type": "boolean" },
+            "moderation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["stage", "categories"],
+              "properties": {
+                "stage": { "enum": ["input", "output", "unknown"] },
+                "categories": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+                }
+              }
+            }
           }
         }
       ]

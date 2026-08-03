@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { ApiClient, loadBootstrap } from "./api/client";
 import { AppShell } from "./components/app-shell";
-import { ErrorState, LibraryInitializationState, LoadingState } from "./components/states";
+import { ErrorState, LoadingState } from "./components/states";
 import { useApiResource } from "./hooks/use-api-resource";
 import { CreationDetailPage } from "./pages/creation-detail-page";
 import { CreationsPage } from "./pages/creations-page";
@@ -19,14 +19,34 @@ export default function App() {
   const location = useBrowserLocation();
   const bootstrap = useApiResource("bootstrap", (signal) => loadBootstrap(signal));
   const api = useMemo(
-    () =>
-      bootstrap.data && !bootstrap.data.initialization ? new ApiClient(bootstrap.data) : undefined,
+    () => (bootstrap.data ? new ApiClient(bootstrap.data) : undefined),
     [bootstrap.data],
   );
 
   useEffect(() => {
     if (location.pathname === "/") navigate("/gallery", { replace: true });
   }, [location.pathname]);
+
+  useEffect(() => {
+    const refresh = () => {
+      navigate("/settings", { replace: true });
+      bootstrap.reload();
+    };
+    window.addEventListener("library-unavailable", refresh);
+    return () => window.removeEventListener("library-unavailable", refresh);
+  }, [bootstrap]);
+
+  useEffect(() => {
+    const reload = () => window.location.reload();
+    window.addEventListener("session-invalid", reload);
+    return () => window.removeEventListener("session-invalid", reload);
+  }, []);
+
+  useEffect(() => {
+    if (bootstrap.data?.library.status === "unavailable" && location.pathname !== "/settings") {
+      navigate("/settings", { replace: true });
+    }
+  }, [bootstrap.data, location.pathname]);
 
   if (location.pathname === "/") return null;
   if (bootstrap.status === "loading" && !bootstrap.data) {
@@ -40,13 +60,6 @@ export default function App() {
     return (
       <main className="bootstrap-screen">
         <ErrorState error={bootstrap.error} onRetry={bootstrap.reload} />
-      </main>
-    );
-  }
-  if (bootstrap.data?.initialization) {
-    return (
-      <main className="bootstrap-screen">
-        <LibraryInitializationState initialization={bootstrap.data.initialization} />
       </main>
     );
   }
@@ -75,6 +88,9 @@ function RouteContent({
   search: string;
   bootstrap: WebBootstrap;
 }) {
+  if (bootstrap.library.status === "unavailable") {
+    return <SettingsPage api={api} bootstrap={bootstrap} />;
+  }
   if (pathname === "/gallery") return <GalleryPage api={api} search={search} />;
   if (pathname === "/references") return <ReferencesPage api={api} search={search} />;
   if (pathname === "/creations") return <CreationsPage api={api} search={search} />;

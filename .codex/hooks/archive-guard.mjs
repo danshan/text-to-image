@@ -360,19 +360,43 @@ export function evaluatePreToolUse(input, dependencies = {}) {
   return allow();
 }
 
-function conciseValidatorFailure(result) {
+function validatorFailure(result) {
   const stdout = typeof result.stdout === "string" ? result.stdout.trim() : "";
   if (stdout) {
     try {
       const payload = JSON.parse(stdout);
-      const code = typeof payload.code === "string" ? payload.code : "ASSET_LIBRARY_INVALID";
-      const message = typeof payload.message === "string" ? payload.message : "Validation failed.";
-      return `${code}: ${message}`.slice(0, 500);
+      const diagnostic = Array.isArray(payload.diagnostics)
+        ? payload.diagnostics.find(
+            (value) =>
+              value &&
+              typeof value === "object" &&
+              typeof value.code === "string" &&
+              typeof value.message === "string",
+          )
+        : undefined;
+      return {
+        code:
+          typeof payload.code === "string"
+            ? payload.code
+            : diagnostic?.code || "ASSET_LIBRARY_INVALID",
+        message:
+          typeof payload.message === "string"
+            ? payload.message
+            : diagnostic?.message || "Validation failed.",
+      };
     } catch {
-      return "ASSET_LIBRARY_INVALID: Validator returned a non-JSON diagnostic.";
+      return {
+        code: "ASSET_LIBRARY_INVALID",
+        message: "Validator returned a non-JSON diagnostic.",
+      };
     }
   }
-  return "ASSET_LIBRARY_INVALID: Read-only validation failed.";
+  return { code: "ASSET_LIBRARY_INVALID", message: "Read-only validation failed." };
+}
+
+function conciseValidatorFailure(result) {
+  const failure = validatorFailure(result);
+  return `${failure.code}: ${failure.message}`.slice(0, 500);
 }
 
 export function runReadOnlyValidator({ cwd, libraryRoot, env = process.env, spawn = spawnSync }) {
@@ -429,6 +453,14 @@ export function evaluateStop(input, dependencies = {}) {
 
   if (!result.error && result.status === 0) {
     return { continue: true };
+  }
+
+  const failure = validatorFailure(result);
+  if (failure.code === "ARCHIVE_NOT_INITIALIZED") {
+    return {
+      continue: true,
+      systemMessage: `Asset Library unavailable at ${libraryRoot}. Open Web Settings to initialize, select, or retry a Library.`,
+    };
   }
 
   return {

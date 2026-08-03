@@ -1,7 +1,6 @@
 import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { ReadModel } from "@text-to-image/read-model";
 import {
   captureGenerationOutput,
   commitGeneration,
@@ -10,8 +9,7 @@ import {
   prepareGeneration,
 } from "@text-to-image/archive";
 import { createApp } from "../apps/server/src/app.js";
-import { LibraryService } from "../apps/server/src/library/library-service.js";
-import { LocalArchiveAdapter } from "../apps/server/src/shared/archive-adapter.js";
+import { LibraryRuntime } from "../apps/server/src/shared/library-runtime.js";
 
 const root = resolve(import.meta.dirname, "..");
 const testRoot = await mkdtemp(join(tmpdir(), "text-to-image-e2e-"));
@@ -74,13 +72,9 @@ prepareGeneration(libraryRoot, fixtureCreationId, {
 });
 await rm(generatedPath, { force: true });
 
-const archive = new LocalArchiveAdapter(libraryRoot);
-const readModel = new ReadModel(libraryRoot);
-await readModel.open();
-const service = new LibraryService(archive, readModel);
+const runtime = await LibraryRuntime.create({ gitRoot: root, libraryArgument: libraryRoot });
 const { app, security } = await createApp({
-  archive,
-  service,
+  runtime,
   logLevel: "warn",
   webRoot: join(root, "apps", "web", "dist"),
 });
@@ -92,7 +86,7 @@ async function close(): Promise<void> {
   if (closing) return;
   closing = true;
   await app.close();
-  readModel.close();
+  runtime.close();
   if (!basename(testRoot).startsWith("text-to-image-e2e-")) {
     throw new TypeError("Refusing to clean an unexpected E2E Library path");
   }

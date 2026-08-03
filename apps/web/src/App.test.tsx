@@ -6,33 +6,65 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("App first-run setup", () => {
-  it("shows the resolved Library path and exact initialization command", async () => {
+describe("App Library unavailable state", () => {
+  it("opens Library management without requesting Gallery", async () => {
     window.history.replaceState({}, "", "/gallery");
-    const initCommand = "npm run assetctl -- init --library '/tmp/image library'";
-    const fetcher = vi.fn().mockResolvedValue(
-      Response.json({
-        apiVersion: "v1",
-        libraryFormatVersion: null,
-        sessionToken: "session-secret",
-        initialization: {
-          required: true,
-          libraryRoot: "/tmp/image library",
-          initCommand,
-        },
-        capabilities: { curation: false, recovery: false, generationFromWeb: false },
-      }),
-    );
+    const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url === "/api/v1/bootstrap") {
+        return Promise.resolve(
+          Response.json({
+            apiVersion: "v1",
+            libraryFormatVersion: null,
+            sessionToken: "session-secret",
+            library: {
+              status: "unavailable",
+              libraryRoot: "/tmp/image library",
+              reason: "missing_root",
+              allowedActions: ["initialize", "select", "retry"],
+            },
+            capabilities: {
+              curation: false,
+              recovery: false,
+              libraryManagement: true,
+              generationFromWeb: false,
+            },
+          }),
+        );
+      }
+      if (url === "/api/v1/health") {
+        return Promise.resolve(
+          Response.json({
+            status: "unavailable",
+            apiVersion: "v1",
+            libraryFormatVersion: null,
+            index: {
+              available: false,
+              latestArchiveMarker: null,
+              lastIndexedMarker: null,
+              lagCount: 0,
+            },
+            recoveryCount: 0,
+            diagnostics: ["Asset Library is unavailable."],
+          }),
+        );
+      }
+      if (url === "/api/v1/library/transition") {
+        return Promise.resolve(Response.json({ data: null }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
     vi.stubGlobal("fetch", fetcher);
 
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "Initialize the local Library" }),
+      await screen.findByRole("heading", { name: "Initialize or switch Library" }),
     ).toBeTruthy();
-    expect(screen.getByText("/tmp/image library")).toBeTruthy();
-    expect(screen.getByText(initCommand)).toBeTruthy();
-    expect(screen.getByText(/restart the local service/u)).toBeTruthy();
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Library path")).toHaveProperty("value", "/tmp/image library");
+    expect(screen.queryByText("Directory browser path")).toBeNull();
+    expect(fetcher.mock.calls.some(([url]) => String(url).startsWith("/api/v1/gallery"))).toBe(
+      false,
+    );
   });
 });

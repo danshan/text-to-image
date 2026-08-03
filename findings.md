@@ -37,7 +37,30 @@
 - MVP 不包含多用户、远程访问、云同步、Purge、语义搜索、实时协作、批量调度或桌面封装.
 - MVP 正式支持 macOS, Linux 为 best-effort, Windows 不支持; 实现仍避免不必要的 OS-specific 逻辑.
 - MVP 验收覆盖 Archive 不变量、故障注入、并发提交、Skill 与 Hook、Web UI 安全、规模基准和文档一致性.
-- 缺少 `library.json` 时不自动创建 Library. Server 只启动初始化诊断模式, Web 显示 explicit init command, 用户初始化后重启 local service.
+- Library root、manifest 或权限缺失统一为 Library Unavailable, 不等同于 Archive corruption 或 Index failure; Server 不自动创建 Library 或 fallback path.
+- 显式 `assetctl init --library` 成功后持久化 canonical absolute path 到 Git root 的 `text-to-image.local.json`; 初始化失败或没有显式 `--library` 时不改写选择.
+- 已存在 Library 通过 `assetctl library select --library` 接入, 命令只在 full validation 通过后更新本机配置, 不修改 Archive.
+- Library Merge 使用 `assetctl library merge --source`, current Library 是 destination; `--library` 仍只覆盖 destination resolver.
+- Library Merge 导入 source 的 committed immutable graph, 复用相同 bytes 或 image hash, 拒绝相同 UUID 不同内容; 已存在实体的 Curation 与 Draft 保留 destination 值.
+- Library Merge 使用 staging、destination lock 与单一 `merge_library` Commit Marker 发布, 支持无写入 `--dry-run`; source 保持只读并在提交前进行 optimistic snapshot recheck.
+- Library Merge 不导入 `inbox/`、cache、SQLite、thumbnail 或 recovery state, 也不持久化 source provenance metadata.
+- Gallery 图片网格保持 Image Asset-only, Generation Issue 使用网格上方独立 region.
+- 每个 active Creation 最多显示一个 Generation Issue, 只由最新 Generation 的终态决定; `shelved` Creation 不进入该区域.
+- Safety Rejection 使用 `IMAGE_GENERATION_SAFETY_REJECTED` 和 optional `moderation.stage | categories`; output-stage rejection 不构成 Prompt violation 判定.
+- Safety guidance 只使用 category-level 建议, 不推断或高亮具体触发词; 恢复路径为 Review Prompt、编辑 Draft、显式创建新 Generation.
+- 当前 development Library 没有历史兼容负担. Safety Rejection contract 直接更新 format `1`, 不实现 migration、旧 reader compatibility 或 ADR; 必要时整体重新初始化 runtime Library.
+- Settings 显示 resolved absolute Library path 并允许输入目标路径; Server 不提供通用 filesystem directory listing 或文件读取 endpoint.
+- Web initialize、select 与 Retry 使用 single async transition; candidate full validation 与 Index rebuild 位于切换临界区外, transition 提供 monotonic stage/count progress.
+- Transition commit 排空旧 Library 请求, 原子持久化 canonical path, 替换唯一 active context 并轮换 session token; 其他 tab 必须重新 bootstrap.
+- 外部恢复原路径后必须显式 Retry. 初始化成功但后续切换失败时保留 detached Library, 不自动删除, 旧 context 与持久化选择不变.
+- Stop Hook 对 `ARCHIVE_NOT_INITIALIZED` 允许结束并指向 Web Settings; 只有现存 Library 的真实完整性失败继续阻断.
+
+## Phase 8 Implementation Findings
+
+- `packages/archive/src/generation.ts` 原先在 commit 时从 staged Prompt Revision 读取 effective Prompt 并覆盖 `prompt-draft.md`; 这会把用户中文 Draft 替换成工具构造的英文. 正确边界是保留 Draft 正文和语言, 只在 hash 未变化时更新 `basedOnRevisionId`.
+- Generation Issue 的安全信息必须在 Archive boundary 做 bounded validation, 在 read model/API 中 typed projection, 在 Web UI 中忽略未知 provider fields. 旧的 `{ code, summary, retryable }` records 仍显示摘要, 不要求补写 moderation.
+- Latest Issue 查询以 active Creation 的最新 Generation 为窗口分区; succeeded 会移除全局 Issue, shelved Creation 不进入 Gallery region, 失败历史仍保留在 Creation Timeline.
+- Web UI 的可读性问题不是单个颜色值或字号修补. Compact Editorial Workspace 需要固定 200 px sidebar、紧凑 header、统一 14 px body / 11 px metadata floor、260-320 px inspector 和独立深色 sidebar tokens; mobile drawer 不在当前 desktop scope.
 
 ## Research Findings
 
@@ -66,6 +89,8 @@
 - macOS WebKit 的默认 Tab focus ring 受系统 Full Keyboard Access 偏好影响. 自动化在 Chromium 验证 Tab 顺序, 在 WebKit 显式 focus 后验证同一 skip-link 的 keyboard activation.
 - Read Model 在验证 manifest 前创建 `.cache` 会把不存在的配置路径变成不完整 Library. manifest presence check 必须位于任何 SQLite 或 cache 写入之前, Server setup mode 不能调用 read model open/rebuild.
 - Initialization mode 必须从真实 process entrypoint 验证. 只测试 `createApp` 会遗漏 factory eager-read; npm workspace 还会把 process `cwd` 改为 workspace 目录, 因而 Server 默认路径必须通过 `.git` 向上解析, 不能直接使用 `process.cwd()`.
+- Commit Marker 文件名是随机 UUID, 不能代表提交顺序. Read Model 必须按 Marker `createdAt` 排序, 并在启动时检测 marker lag 后从文件系统重建.
+- Browser E2E 在受限文件系统沙箱内会因 Chromium 与 WebKit 进程启动失败而产生全量假失败; 相同 suite 在 scoped outside-sandbox execution 中通过.
 
 ## Resources
 

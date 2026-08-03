@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   ArchiveError,
   assertReferenceImages,
+  assertGenerationError,
   type GenerationErrorRecord,
   type GenerationOutput,
   type GenerationRecord,
@@ -16,7 +17,6 @@ import {
   readTransaction,
   stageRecordBytes,
   stageRecordJson,
-  stagedRecordPath,
   transitionTransaction,
   type TransactionOptions,
 } from "./transaction.js";
@@ -62,6 +62,10 @@ export interface FailGenerationRequest {
     code: string;
     message: string;
     retryable: boolean;
+    moderation?: {
+      stage: "input" | "output" | "unknown";
+      categories: string[];
+    };
   };
 }
 
@@ -256,7 +260,9 @@ export function failGeneration(
     code: request.error.code,
     summary: request.error.message,
     retryable: request.error.retryable,
+    ...(request.error.moderation ? { moderation: request.error.moderation } : {}),
   };
+  assertGenerationError(error);
   return finalizeGeneration(
     libraryRoot,
     transactionId,
@@ -327,16 +333,12 @@ export function commitGeneration(
   const currentDraft = readDraft(libraryRoot, transaction.creationId);
   let draftUpdated = false;
   if (currentDraft.contentSha256 === transaction.draftContentSha256) {
-    const promptPath = stagedRecordPath(
-      libraryRoot,
-      transactionId,
-      `creations/${transaction.creationId}/revisions/${transaction.revisionId}/prompt.md`,
-    );
-    const prompt = readFileSync(promptPath, "utf8");
+    // Keep the user's Draft verbatim. The effective Prompt belongs only to the
+    // immutable Prompt Revision committed above.
     updateDraft(
       libraryRoot,
       transaction.creationId,
-      prompt,
+      currentDraft.content,
       currentDraft.contentSha256,
       transaction.revisionId,
       options.adapters ?? defaultRuntimeAdapters,

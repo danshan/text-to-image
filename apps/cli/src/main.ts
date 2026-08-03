@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import {
   ArchiveError,
   LIBRARY_FORMAT_VERSION,
   cancelPreparedTransaction,
   captureGenerationOutput,
+  canonicalizePossiblyMissing,
   checkpointRevision,
   commitGeneration,
   completeGeneration,
@@ -17,6 +18,8 @@ import {
   inspectRecoveryTransaction,
   listRecoveryTransactions,
   markInvocationStarted,
+  mergeLibrary,
+  persistLibrarySelection,
   prepareGeneration,
   quarantineTransaction,
   readDraft,
@@ -54,6 +57,8 @@ export async function run(argv: string[]): Promise<CliResult> {
       generationWorkflowVersion: 1,
       commands: [
         "library.resolve",
+        "library.select",
+        "library.merge",
         "init",
         "validate",
         "index.rebuild",
@@ -115,8 +120,37 @@ export async function run(argv: string[]): Promise<CliResult> {
   if (command === "library" && subcommand === "resolve") {
     return success({ libraryRoot: resolved.libraryRoot });
   }
+  if (command === "library" && subcommand === "select") {
+    if (!cliPath) {
+      throw new ArchiveError("LIBRARY_CONFIG_INVALID", "Missing required --library option.");
+    }
+    const report = validateLibrary(resolved.libraryRoot, "full");
+    if (!report.valid) {
+      throw new ArchiveError("ARCHIVE_CORRUPTION", "Cannot select an invalid Library.", {
+        libraryRoot: resolved.libraryRoot,
+        diagnostics: report.diagnostics,
+      });
+    }
+    return success(persistLibrarySelection(resolved.gitRoot, resolved.libraryRoot));
+  }
+  if (command === "library" && subcommand === "merge") {
+    const sourceArgument = stringOption(parsed, "source");
+    const sourceRoot = canonicalizePossiblyMissing(
+      isAbsolute(sourceArgument) ? sourceArgument : resolve(resolved.gitRoot, sourceArgument),
+    );
+    return success(
+      mergeLibrary(resolved.libraryRoot, sourceRoot, {
+        dryRun: parsed.options.has("dry-run"),
+      }),
+    );
+  }
   if (command === "init") {
-    return success(initLibrary(resolved.libraryRoot));
+    const initialized = initLibrary(resolved.libraryRoot);
+    if (!cliPath) return success(initialized);
+    return success({
+      ...initialized,
+      selection: persistLibrarySelection(resolved.gitRoot, initialized.libraryRoot),
+    });
   }
   if (command === "validate") {
     const report = validateLibrary(

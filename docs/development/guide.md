@@ -10,6 +10,7 @@ related:
   - ../design/web-ui.md
   - testing.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
+  - ../adr/0010-enable-web-controlled-library-hot-switching.md
 ---
 
 # 开发指南
@@ -143,6 +144,9 @@ Asset CLI 通过 root script 调用:
 
 ```bash
 npm run assetctl -- init --library ./library
+npm run assetctl -- library select --library /path/to/existing-library
+npm run assetctl -- library merge --source /path/to/source-library --dry-run
+npm run assetctl -- library merge --source /path/to/source-library
 npm run assetctl -- validate --library ./library
 npm run assetctl -- capabilities --format json
 npm run assetctl -- index rebuild --library ./library
@@ -166,9 +170,9 @@ npm run dev
 
 首次启动 Web UI 时:
 
-1. 如果 `library.json` 不存在, Server 不打开或重建 read model, 只启动初始化诊断模式.
-2. Web UI 显示 canonical Library path 和 shell-safe exact init command.
-3. 初始化诊断模式不得创建 Library 目录、`.cache/`、SQLite index 或 fallback Library.
+1. 如果 Library root 或 `library.json` 不存在, Server 不打开或重建 read model, 进入 Library Unavailable mode.
+2. Web UI 导航到 Settings, 显示绝对 Library path, 并提供 initialize、select 与 Retry.
+3. Library Unavailable mode 不得创建 Library 目录、`.cache`、SQLite index 或 fallback Library.
 4. 如果 Library version unsupported, 显示 migration or upgrade diagnostic.
 5. 如果 Library healthy, 启动或重建 read model.
 6. 打开 loopback URL, 不自动绑定 external interface.
@@ -192,6 +196,8 @@ Ignored `text-to-image.local.json` 可以保存仓库外路径:
 ```
 
 CLI `--library` 优先级最高. 相对路径按 Git root 解析. 配置 parser 与 path resolver 位于 shared package, CLI、server、Skill helper 与 Hook 不得独立实现 precedence.
+
+成功执行 CLI `init --library`、`library select --library` 或 Web Library transition 后, shared resolver 把 canonical absolute path 原子写入 Git root 的 `text-to-image.local.json`. 写入失败或 Library validation 失败时保留原配置. Web transition 会在 candidate ready 后排空旧请求、切换 runtime context 并轮换 session token, 无需重启 Server.
 
 Server port 默认由 OS 分配可用 loopback port, 避免固定端口冲突. 开发模式可以显式配置 port, 但仍只允许 loopback.
 
@@ -289,7 +295,9 @@ npm run test:performance
 
 ### Library path not found
 
-Web UI 显示解析后的 canonical path 与 exact init command. 运行该命令后 restart local service 并 reload 页面. Server 在重启前只提供 bootstrap 和 health diagnostics, 其他 Library API 返回 `LIBRARY_INITIALIZATION_REQUIRED`; 不创建 Library、`.cache/` 或 fallback path.
+Web UI 进入 Settings Library management. 输入 existing Library 的绝对路径后执行 Select, 对 missing 或 empty target 执行 Initialize, 或在原路径恢复完成后执行 Retry. Server 只提供 control plane, 其他 Library API 返回 `LIBRARY_UNAVAILABLE`; Index rebuild 无法恢复已删除的事实来源.
+
+Library transition prepare 可以在旧 Library 继续服务时运行. UI 轮询 processed/total progress; ready 后 commit 会短暂阻断新请求、排空旧请求、持久化选择、切换 context 并轮换 session token. 如果初始化已完成但后续失败, 不删除新目录; 根据 UI 返回路径重试 Select.
 
 ### External Library permission denied
 

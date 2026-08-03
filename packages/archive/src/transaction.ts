@@ -63,6 +63,24 @@ export interface CreateTransactionInput {
   state?: TransactionState;
 }
 
+export interface StagedRecordFile {
+  kind: CommitRecordKind;
+  relativePath: string;
+  sourcePath: string;
+  sha256: string;
+}
+
+export interface StagedMergeMutableFile {
+  relativePath: string;
+  sourcePath: string;
+  sha256: string;
+}
+
+interface MergeMutableRecord {
+  path: string;
+  sha256: string;
+}
+
 export function createTransaction(
   libraryRoot: string,
   input: CreateTransactionInput,
@@ -196,6 +214,110 @@ export function stageRecordJson(
   );
 }
 
+export function stageRecordFiles(
+  libraryRoot: string,
+  transactionId: string,
+  files: StagedRecordFile[],
+  options: TransactionOptions = {},
+): TransactionRecord {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  if (transaction.state === "ready_to_commit") {
+    throw new ArchiveError(
+      "TRANSACTION_INVALID_STATE",
+      "Ready transaction cannot accept more staged records.",
+      { transactionId },
+    );
+  }
+  for (const file of files) {
+    resolveManagedPath(libraryRoot, file.relativePath);
+    const bytes = readFileSync(file.sourcePath);
+    if (sha256Bytes(bytes) !== file.sha256) {
+      throw new ArchiveError("ARCHIVE_HASH_MISMATCH", "Source record changed before staging.", {
+        relativePath: file.relativePath,
+      });
+    }
+    const stagedPath = stagedRecordPath(libraryRoot, transactionId, file.relativePath);
+    if (pathExists(stagedPath)) {
+      if (sha256Bytes(readFileSync(stagedPath)) !== file.sha256) {
+        throw new ArchiveError("ARCHIVE_CONFLICT", "Staged record has different bytes.", {
+          transactionId,
+          relativePath: file.relativePath,
+        });
+      }
+    } else {
+      writeBytesAtomic(stagedPath, bytes);
+    }
+    const existing = transaction.stagedRecords.find((record) => record.path === file.relativePath);
+    if (existing && (existing.sha256 !== file.sha256 || existing.kind !== file.kind)) {
+      throw new ArchiveError("ARCHIVE_CONFLICT", "Transaction metadata conflicts.", {
+        transactionId,
+        relativePath: file.relativePath,
+      });
+    }
+    if (!existing) {
+      transaction.stagedRecords.push({
+        kind: file.kind,
+        path: file.relativePath,
+        sha256: file.sha256,
+      });
+    }
+  }
+  transaction.stagedRecords.sort((left, right) => left.path.localeCompare(right.path));
+  transaction.updatedAt = (options.adapters ?? defaultRuntimeAdapters).now();
+  writeTransaction(libraryRoot, transaction);
+  return transaction;
+}
+
+export function stageMergeMutableFiles(
+  libraryRoot: string,
+  transactionId: string,
+  files: StagedMergeMutableFile[],
+  options: TransactionOptions = {},
+): TransactionRecord {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  if (transaction.operation !== "merge_library" || transaction.state === "ready_to_commit") {
+    throw new ArchiveError(
+      "TRANSACTION_INVALID_STATE",
+      "Only a prepared Library Merge can stage mutable state.",
+      { transactionId, operation: transaction.operation, state: transaction.state },
+    );
+  }
+  const records = readMergeMutableRecords(transaction);
+  for (const file of files) {
+    assertMergeMutablePath(file.relativePath);
+    const bytes = readFileSync(file.sourcePath);
+    if (sha256Bytes(bytes) !== file.sha256) {
+      throw new ArchiveError("ARCHIVE_HASH_MISMATCH", "Source mutable state changed.", {
+        relativePath: file.relativePath,
+      });
+    }
+    const stagedPath = mergeMutablePath(libraryRoot, transactionId, file.relativePath);
+    if (pathExists(stagedPath)) {
+      if (sha256Bytes(readFileSync(stagedPath)) !== file.sha256) {
+        throw new ArchiveError("ARCHIVE_CONFLICT", "Staged mutable state has different bytes.", {
+          transactionId,
+          relativePath: file.relativePath,
+        });
+      }
+    } else {
+      writeBytesAtomic(stagedPath, bytes);
+    }
+    const existing = records.find((record) => record.path === file.relativePath);
+    if (existing && existing.sha256 !== file.sha256) {
+      throw new ArchiveError("ARCHIVE_CONFLICT", "Merge contains conflicting mutable state.", {
+        transactionId,
+        relativePath: file.relativePath,
+      });
+    }
+    if (!existing) records.push({ path: file.relativePath, sha256: file.sha256 });
+  }
+  records.sort((left, right) => left.path.localeCompare(right.path));
+  transaction.request = { ...transaction.request, mutableRecords: records };
+  transaction.updatedAt = (options.adapters ?? defaultRuntimeAdapters).now();
+  writeTransaction(libraryRoot, transaction);
+  return transaction;
+}
+
 export function transitionTransaction(
   libraryRoot: string,
   transactionId: string,
@@ -256,6 +378,7 @@ export function commitTransaction(
     });
   }
   validateStagedRecords(libraryRoot, transaction);
+  validateMergeMutableRecords(libraryRoot, transaction);
   assertLibraryValid(libraryRoot, "quick");
 
   const existingMarker = readCommitMarkers(libraryRoot).find(
@@ -271,11 +394,45 @@ export function commitTransaction(
     readLibraryManifest(libraryRoot);
     const committedPaths = readCommittedPathIndex(libraryRoot);
     const markerRecords: CommitMarker["records"] = [];
+    if (transaction.operation === "merge_library") {
+      validateMergeIdentityCollisions(libraryRoot, transaction);
+    }
+
+    for (const [index, record] of readMergeMutableRecords(transaction).entries()) {
+      const source = mergeMutablePath(libraryRoot, transaction.id, record.path);
+      const destination = resolveManagedPath(libraryRoot, record.path);
+      mkdirSync(dirname(destination), { recursive: true });
+      if (pathExists(destination)) {
+        const status = lstatSync(destination);
+        if (
+          !status.isFile() ||
+          status.isSymbolicLink() ||
+          sha256Bytes(readFileSync(destination)) !== record.sha256
+        ) {
+          throw new ArchiveError("ARCHIVE_CONFLICT", "Mutable destination path conflicts.", {
+            relativePath: record.path,
+          });
+        }
+      } else {
+        copyFileSync(source, destination, constants.COPYFILE_EXCL);
+        const descriptor = openSync(destination, "r");
+        try {
+          fsyncSync(descriptor);
+        } finally {
+          closeSync(descriptor);
+        }
+        syncDirectory(dirname(destination));
+      }
+      options.failpoints?.hit(`after_merge_mutable_install:${index}`);
+    }
 
     for (const [index, record] of transaction.stagedRecords.entries()) {
       const owner = committedPaths.get(record.path);
       if (owner) {
-        if (record.kind !== "image_asset" || owner.sha256 !== record.sha256) {
+        const reusable =
+          owner.sha256 === record.sha256 &&
+          (record.kind === "image_asset" || transaction.operation === "merge_library");
+        if (!reusable) {
           throw new ArchiveError(
             "ARCHIVE_CONFLICT",
             "Archive path is already owned by another Commit Marker.",
@@ -420,6 +577,101 @@ function validateStagedRecords(libraryRoot: string, transaction: TransactionReco
     } else if (record.kind === "generation") {
       assertRecordSchema("generation", JSON.parse(bytes.toString("utf8")), record.path);
     }
+  }
+}
+
+function validateMergeMutableRecords(libraryRoot: string, transaction: TransactionRecord): void {
+  for (const record of readMergeMutableRecords(transaction)) {
+    const path = mergeMutablePath(libraryRoot, transaction.id, record.path);
+    if (!pathExists(path) || sha256Bytes(readFileSync(path)) !== record.sha256) {
+      throw new ArchiveError(
+        "ARCHIVE_HASH_MISMATCH",
+        "Staged mutable state is missing or changed.",
+        {
+          transactionId: transaction.id,
+          relativePath: record.path,
+        },
+      );
+    }
+  }
+}
+
+function validateMergeIdentityCollisions(
+  libraryRoot: string,
+  transaction: TransactionRecord,
+): void {
+  const identities = new Map<string, { path: string; sha256: string }>();
+  for (const marker of readCommitMarkers(libraryRoot)) {
+    for (const record of marker.records) {
+      const identity = recordIdentity(resolveManagedPath(libraryRoot, record.path), record.kind);
+      if (identity) identities.set(`${record.kind}:${identity}`, record);
+    }
+  }
+  for (const record of transaction.stagedRecords) {
+    const identity = recordIdentity(
+      stagedRecordPath(libraryRoot, transaction.id, record.path),
+      record.kind,
+    );
+    if (!identity) continue;
+    const existing = identities.get(`${record.kind}:${identity}`);
+    if (existing && (existing.path !== record.path || existing.sha256 !== record.sha256)) {
+      throw new ArchiveError("ARCHIVE_CONFLICT", "Entity identity changed before merge commit.", {
+        kind: record.kind,
+        identity,
+        sourcePath: record.path,
+        sourceSha256: record.sha256,
+        destinationPath: existing.path,
+        destinationSha256: existing.sha256,
+      });
+    }
+  }
+}
+
+function recordIdentity(path: string, kind: CommitRecordKind): string | null {
+  if (kind === "image_asset") return sha256Bytes(readFileSync(path));
+  if (kind === "prompt") return null;
+  const value = JSON.parse(readFileSync(path, "utf8")) as { id?: unknown };
+  return typeof value.id === "string" ? value.id : null;
+}
+
+function readMergeMutableRecords(transaction: TransactionRecord): MergeMutableRecord[] {
+  const value = transaction.request.mutableRecords;
+  if (value === undefined) return [];
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (record) =>
+        !record ||
+        typeof record !== "object" ||
+        typeof (record as Record<string, unknown>).path !== "string" ||
+        !/^[a-f0-9]{64}$/u.test(String((record as Record<string, unknown>).sha256)),
+    )
+  ) {
+    throw new ArchiveError("ARCHIVE_SCHEMA_INVALID", "Merge mutable metadata is malformed.", {
+      transactionId: transaction.id,
+    });
+  }
+  return value as MergeMutableRecord[];
+}
+
+function mergeMutablePath(
+  libraryRoot: string,
+  transactionId: string,
+  relativePath: string,
+): string {
+  assertMergeMutablePath(relativePath);
+  return resolveManagedPath(libraryRoot, `.staging/${transactionId}/mutable/${relativePath}`);
+}
+
+function assertMergeMutablePath(relativePath: string): void {
+  if (
+    !/^creations\/[a-f0-9-]{36}\/prompt-draft\.(?:json|md)$/u.test(relativePath) &&
+    !/^curation\/creations\/[a-f0-9-]{36}\.json$/u.test(relativePath) &&
+    !/^curation\/images\/[a-f0-9]{64}\.json$/u.test(relativePath)
+  ) {
+    throw new ArchiveError("ARCHIVE_PATH_ESCAPE", "Library Merge mutable path is not allowed.", {
+      relativePath,
+    });
   }
 }
 

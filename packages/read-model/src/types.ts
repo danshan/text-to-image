@@ -67,6 +67,18 @@ export interface IndexedRevision {
   createdAt: string;
 }
 
+export interface GenerationModerationRecord {
+  stage: "input" | "output" | "unknown";
+  categories: string[];
+}
+
+export interface GenerationErrorRecord {
+  code: string;
+  summary: string;
+  retryable: boolean;
+  moderation?: GenerationModerationRecord;
+}
+
 export interface IndexedGeneration {
   id: string;
   creationId: string;
@@ -89,7 +101,17 @@ export interface IndexedGeneration {
   tool: { name: string; model: string | null; parameters: Record<string, unknown> };
   startedAt: string;
   completedAt: string;
-  error: Record<string, unknown> | null;
+  error: GenerationErrorRecord | null;
+}
+
+export interface IndexedGenerationIssue {
+  generationId: string;
+  creationId: string;
+  creationTitle: string;
+  status: "failed" | "interrupted";
+  outcomeKnown: boolean;
+  completedAt: string;
+  error: GenerationErrorRecord | null;
 }
 
 export interface IndexStatus {

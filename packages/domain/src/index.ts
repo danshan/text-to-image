@@ -8,7 +8,7 @@ export type GenerationStatus = "succeeded" | "failed" | "interrupted";
 export type TransactionState =
   "prepared" | "invocation_started" | "outputs_captured" | "ready_to_commit";
 export type CommitOperation =
-  "initialize_creation" | "checkpoint_revision" | "import_asset" | "generation";
+  "initialize_creation" | "checkpoint_revision" | "import_asset" | "generation" | "merge_library";
 export type CommitRecordKind = "creation" | "prompt" | "revision" | "generation" | "image_asset";
 
 export interface LibraryManifest {
@@ -56,10 +56,18 @@ export interface GenerationOutput {
   height: number;
 }
 
+export type GenerationModerationStage = "input" | "output" | "unknown";
+
+export interface GenerationModerationRecord {
+  stage: GenerationModerationStage;
+  categories: string[];
+}
+
 export interface GenerationErrorRecord {
   code: string;
   summary: string;
   retryable: boolean;
+  moderation?: GenerationModerationRecord;
 }
 
 export interface GenerationRecord {
@@ -148,6 +156,35 @@ export interface ImageInspection {
   extension: "png" | "jpg" | "webp";
   width: number;
   height: number;
+}
+
+export function assertGenerationError(error: GenerationErrorRecord): void {
+  if (!error.code.trim() || error.code.length > 100) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation error code must be between 1 and 100 characters.",
+    );
+  }
+  if (!error.summary.trim() || error.summary.length > 1000) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation error summary must be between 1 and 1000 characters.",
+    );
+  }
+  if (!error.moderation) return;
+  if (!(["input", "output", "unknown"] as const).includes(error.moderation.stage)) {
+    throw new ArchiveError("ARCHIVE_SCHEMA_INVALID", "Generation moderation stage is invalid.");
+  }
+  if (
+    error.moderation.categories.length > 20 ||
+    error.moderation.categories.some((category) => !category.trim() || category.length > 100) ||
+    new Set(error.moderation.categories).size !== error.moderation.categories.length
+  ) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation moderation categories must be unique, non-empty, and bounded.",
+    );
+  }
 }
 
 export type ArchiveErrorCode =

@@ -22,6 +22,14 @@ export const generationParamsSchema = {
   properties: { generationId: { type: "string", pattern: uuid } },
 } as const;
 
+export const generationIssuesQuerySchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    limit: { type: "integer", minimum: 1, maximum: 100 },
+  },
+} as const;
+
 export const imageParamsSchema = {
   type: "object",
   additionalProperties: false,

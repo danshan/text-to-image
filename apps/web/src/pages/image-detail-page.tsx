@@ -26,12 +26,6 @@ export function ImageDetailPage({ api, sha256 }: { api: ApiClient; sha256: strin
       <div className="image-detail-layout">
         <div className="image-stage">
           <img src={`/api/v1/images/${image.sha256}/content?variant=original`} alt={alt} />
-          <div className="stage-registration" aria-hidden="true">
-            <span>+</span>
-            <span>+</span>
-            <span>+</span>
-            <span>+</span>
-          </div>
           <dl className="image-facts">
             <div>
               <dt>Dimensions</dt>

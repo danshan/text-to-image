@@ -9,6 +9,7 @@ related:
   - generation-workflow.md
   - web-ui.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
+  - ../adr/0010-enable-web-controlled-library-hot-switching.md
 ---
 
 # 系统架构
@@ -62,7 +63,7 @@ flowchart LR
 
 | Component                 | Owns                                                                                | Must Not Own                                                       |
 | ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Browser Web UI            | UI state、URL state、unsubmitted form edits                                         | filesystem path、Archive write logic、generation invocation        |
+| Browser Web UI            | UI state、URL state、unsubmitted form edits                                         | filesystem access、Archive write logic、generation invocation      |
 | Fastify Local Service     | loopback security、HTTP validation、orchestration                                   | domain duplicate、arbitrary file endpoint、authoritative user data |
 | `assetctl`                | human/machine CLI、init、validate、commit、recover、migrate                         | independent Archive implementation                                 |
 | Shared Archive Package    | filesystem contract、hash、lock、transaction、Commit Marker、Curation atomic update | HTTP、React、Codex prompt decisions                                |
@@ -88,14 +89,22 @@ Browser -> 127.0.0.1:<ephemeral-port> -> Fastify -> Shared Packages -> Library
 
 1. 解析 Library path.
 2. 检查 `library.json` 是否存在.
-3. 缺少 manifest 时跳过 read model, 进入初始化诊断模式并绑定 loopback.
+3. 缺少 root 或 manifest 时跳过 read model, 进入 Library Unavailable control mode 并绑定 loopback.
 4. manifest 存在时验证 format 与 permissions.
 5. 获取 read-only health snapshot.
-6. 打开或重建 SQLite read model.
+6. 打开 SQLite read model; cache 缺失、损坏或 Commit Marker lag 时先重建.
 7. 生成 session token 并绑定 loopback.
 8. 输出本地 URL.
 
-初始化诊断模式不会创建 Library root、`.cache/` 或 SQLite index. Bootstrap 返回 canonical path 和 shell-safe exact init command, Browser 显示后等待用户显式初始化并重启 local service. 其他 Library API 返回 `503 LIBRARY_INITIALIZATION_REQUIRED`. 如果 Library invalid, server 可以以 read-only diagnostics mode 启动, 但不得 fallback 到另一个空 Library.
+Library Unavailable mode 不会创建 Library root、`.cache/`、SQLite index 或 fallback Library. Bootstrap 返回统一 `LIBRARY_UNAVAILABLE` state、reason 与 allowed actions. Static Web、bootstrap、health 和 Library transition control plane 保持可用, 其他 Library API 返回 `503 LIBRARY_UNAVAILABLE`. Library invalid 仍属于独立的 read-only diagnostics mode.
+
+### Runtime Library Management
+
+`LibraryRuntime` 是 active Archive adapter、Read Model、Library Service 与 Thumbnail Cache 的唯一所有者. 每个 Library data request 在入口获取 immutable context snapshot, 在 response 完成时释放. Request boundary 发现 root、manifest 或权限消失后, runtime 阻断新 data request 并进入 Library Unavailable; 外部恢复后仍要求显式 Retry.
+
+Settings 显示 bootstrap 解析出的绝对 Library path, 并允许用户输入 Server 账号可访问的绝对目标路径. Server 不提供通用 filesystem directory listing 或文件读取 endpoint; Library transition 继续受 loopback、Host、Origin、session token、canonicalization 与 OS permissions 约束.
+
+同一时间只允许一个内存态 Library transition. Candidate 的 full validation 与 Index rebuild 在旧 Library 继续服务时完成. Candidate ready 后, commit boundary 拒绝新请求并排空旧请求, 再次校验 candidate, 原子持久化 `text-to-image.local.json`, 替换 active context 并轮换 session token. 其他 Browser tab 的旧 token 随即失效. 初始化已成功而后续步骤失败时保留新 Library, 但不改变旧 active context 或持久化选择.
 
 ### Generation Runtime
 
@@ -147,14 +156,15 @@ Built-in tool call 不经过 local Web service. Web service 通过 Commit Marker
 
 ```text
 Web UI -> Fastify -> Shared Archive Package -> Draft/Curation/Recovery
+Web UI -> Fastify Library Control Plane -> Init/Select/Retry
 Codex Skill -> assetctl -> Shared Archive Package -> Archive Transaction
-Human CLI -> assetctl -> Shared Archive Package -> Init/Validate/Recovery/Migration
+Human CLI -> assetctl -> Shared Archive Package -> Init/Select/Merge/Validate/Recovery
 ```
 
 禁止的入口:
 
 ```text
-Web UI -> filesystem
+Web UI -> generic filesystem read/write
 Fastify handler -> managed path
 Codex -> apply_patch Archive
 Hook -> mutate Library
@@ -165,7 +175,7 @@ SQLite -> reconstruct Archive
 
 普通查询优先使用 SQLite read model. 权威 detail response 必须包含或核对 Archive source version. Diagnostics、validation 与 rebuild 直接遍历 Commit Marker 和 records.
 
-Read model lag 允许发生, 但必须可观察. API health 返回 last indexed Marker、latest Archive Marker 和 lag count. UI 在 lag 时显示 indexing, 不把暂时未出现的 committed result视为失败.
+Read model lag 允许在运行时发生, 但必须可观察. API health 返回 last indexed Marker、latest Archive Marker 和 lag count. Server 启动和 candidate preparation 都会重建 missing、corrupt 或 lagging read model. Web transition 可以热切换 root; CLI 修改 Library selection 或完成 Library Merge 后, 当前 process 仍需通过 Settings Retry/select 或重新启动以读取新 snapshot.
 
 ## Source Control and Runtime Data
 
@@ -228,6 +238,8 @@ Git 不保存:
 | Curation conflict                | one sidecar                           | reload and optimistic retry                |
 | Archive corruption               | read-only whole Library               | validate, diagnose, explicit repair design |
 | External Library permission loss | current process                       | read-only/unavailable, no fallback Library |
+| Library transition prepare       | candidate context                     | keep old context, report retryable failure |
+| Library transition commit        | quiescent runtime boundary            | keep old selection unless persistence won  |
 | Hook disabled                    | Codex guard only                      | writer still rejects invalid operations    |
 
 ## Compatibility
@@ -251,4 +263,5 @@ App 启动和 Skill prepare 都执行 capabilities handshake. Unsupported future
 - end-to-end provenance test 跨 Browser、Server、Archive、Read Model 与 CLI.
 - failure injection 确认每个 failure domain 不污染其他层.
 - security suite 确认 local service 和 external Library path containment.
+- integration suite 确认 request-boundary unavailable detection、single transition、drain、atomic persistence、runtime swap 与 session token rotation.
 - docs checker 确认本总览 links 到 canonical detail, 不复制漂移的 Schema 定义.

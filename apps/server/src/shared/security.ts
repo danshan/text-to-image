@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { SecurityBoundaryError } from "./errors.js";
 
@@ -14,7 +14,7 @@ function equalToken(actual: string | undefined, expected: string): boolean {
 }
 
 export class SecurityContext {
-  readonly #sessionToken: string;
+  #sessionToken: string;
   readonly #hosts = new Set<string>();
   readonly #origins = new Set<string>();
 
@@ -23,6 +23,11 @@ export class SecurityContext {
   }
 
   get sessionToken(): string {
+    return this.#sessionToken;
+  }
+
+  rotateSessionToken(): string {
+    this.#sessionToken = randomBytes(32).toString("base64url");
     return this.#sessionToken;
   }
 

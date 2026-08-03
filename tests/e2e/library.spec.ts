@@ -7,6 +7,26 @@ test("renders the warm thumbnail first screen within two seconds", async ({ page
   expect(Date.now() - startedAt).toBeLessThanOrEqual(2_000);
 });
 
+test("keeps the compact desktop shell visually stable", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/gallery");
+  await expect(page).toHaveScreenshot("gallery-1024.png", {
+    fullPage: true,
+    animations: "disabled",
+    mask: [page.locator("time"), page.locator("code"), page.locator(".revision-chip")],
+    maxDiffPixels: 1_000,
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/creations/f69e912d-c504-4278-89d5-4558ba452df0");
+  await expect(page).toHaveScreenshot("creation-1440.png", {
+    fullPage: true,
+    animations: "disabled",
+    mask: [page.locator("time"), page.locator("code"), page.locator(".revision-chip")],
+    maxDiffPixels: 1_000,
+  });
+});
+
 test("traverses immutable provenance from an image to its creation", async ({ page }) => {
   await page.goto("/gallery");
 
@@ -57,6 +77,7 @@ test("supports keyboard skip navigation and persistent theme selection", async (
 }, testInfo) => {
   await page.goto("/gallery");
 
+  await expect(page.getByRole("heading", { level: 1, name: "Gallery" })).toBeVisible();
   const skipLink = page.getByRole("link", { name: "Skip to content" });
   if (testInfo.project.name === "webkit") {
     await skipLink.focus();

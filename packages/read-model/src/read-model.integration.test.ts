@@ -8,7 +8,11 @@ import { ReadModel } from "./read-model.js";
 const creationId = "f69e912d-c504-4278-89d5-4558ba452df0";
 const revisionId = "1567f72f-7a13-45cd-acd3-84a0090547e1";
 const generationId = "755fc2f9-81a8-4d3a-89c4-3d60ca2ed21d";
+const failedGenerationId = "8b2e66e9-08db-41cb-8a1c-5b2a66859317";
+const recoveryGenerationId = "93482f51-5ee0-4f38-9dcb-4d17c1e0db4c";
 const markerId = "9f386ef3-b8ce-4197-ad14-a2fda4c19754";
+const failedMarkerId = "a4d6c7e8-f901-4234-8567-9a0b1c2d3e4f";
+const recoveryMarkerId = "b5e7d8f9-0123-4345-9678-ab1c2d3e4f50";
 
 const roots: string[] = [];
 
@@ -200,6 +204,133 @@ describe("ReadModel", () => {
       lastIndexedMarker: markerId,
     });
     model.close();
+  });
+
+  it("derives one latest issue per active Creation and clears it after recovery", async () => {
+    const { root } = await fixture();
+    const failed = json({
+      schemaVersion: 1,
+      id: failedGenerationId,
+      creationId,
+      promptRevisionId: revisionId,
+      replayOfGenerationId: null,
+      status: "failed",
+      outcomeKnown: true,
+      references: [],
+      outputs: [],
+      tool: { name: "image_gen.imagegen", model: null, parameters: {} },
+      startedAt: "2026-08-02T12:07:00.000Z",
+      completedAt: "2026-08-02T12:08:00.000Z",
+      error: {
+        code: "IMAGE_GENERATION_SAFETY_REJECTED",
+        summary: "The generated result was rejected by safety moderation.",
+        retryable: false,
+        moderation: { stage: "output", categories: ["sexual"] },
+      },
+    });
+    const failedRecord = await writeObject(
+      root,
+      `creations/${creationId}/generations/${failedGenerationId}/generation.json`,
+      failed,
+    );
+    await writeFile(
+      join(root, "archive", "commits", `${failedMarkerId}.json`),
+      json({
+        schemaVersion: 1,
+        id: failedMarkerId,
+        operation: "generation",
+        createdAt: "2026-08-02T12:08:01.000Z",
+        records: [failedRecord],
+      }),
+    );
+
+    const model = new ReadModel(root);
+    await model.open();
+    expect(model.listGenerationIssues()).toEqual([
+      {
+        generationId: failedGenerationId,
+        creationId,
+        creationTitle: "Soft Light Portrait",
+        status: "failed",
+        outcomeKnown: true,
+        completedAt: "2026-08-02T12:08:00.000Z",
+        error: {
+          code: "IMAGE_GENERATION_SAFETY_REJECTED",
+          summary: "The generated result was rejected by safety moderation.",
+          retryable: false,
+          moderation: { stage: "output", categories: ["sexual"] },
+        },
+      },
+    ]);
+
+    const recovered = json({
+      schemaVersion: 1,
+      id: recoveryGenerationId,
+      creationId,
+      promptRevisionId: revisionId,
+      replayOfGenerationId: null,
+      status: "succeeded",
+      outcomeKnown: true,
+      references: [],
+      outputs: [],
+      tool: { name: "image_gen.imagegen", model: null, parameters: {} },
+      startedAt: "2026-08-02T12:09:00.000Z",
+      completedAt: "2026-08-02T12:10:00.000Z",
+      error: null,
+    });
+    const recoveredRecord = await writeObject(
+      root,
+      `creations/${creationId}/generations/${recoveryGenerationId}/generation.json`,
+      recovered,
+    );
+    await writeFile(
+      join(root, "archive", "commits", `${recoveryMarkerId}.json`),
+      json({
+        schemaVersion: 1,
+        id: recoveryMarkerId,
+        operation: "generation",
+        createdAt: "2026-08-02T12:10:01.000Z",
+        records: [recoveredRecord],
+      }),
+    );
+    await model.rebuild();
+    expect(model.listGenerationIssues()).toEqual([]);
+    model.close();
+  });
+
+  it("rebuilds a lagging cache on open using Marker time instead of UUID order", async () => {
+    const { root } = await fixture();
+    const initial = new ReadModel(root);
+    await initial.open();
+    initial.close();
+    const imageBytes = Buffer.from("89504e470d0a1a0a0000000d4948445201", "hex");
+    const assetSha256 = digest(imageBytes);
+    const record = await writeObject(
+      root,
+      `assets/sha256/${assetSha256.slice(0, 2)}/${assetSha256}.png`,
+      imageBytes,
+    );
+    const nextMarkerId = "00000000-0000-4000-8000-000000000001";
+    await writeFile(
+      join(root, "archive", "commits", `${nextMarkerId}.json`),
+      json({
+        schemaVersion: 1,
+        id: nextMarkerId,
+        operation: "import_asset",
+        createdAt: "2026-08-02T13:00:00.000Z",
+        records: [record],
+      }),
+    );
+
+    const reopened = new ReadModel(root);
+    await reopened.open();
+
+    expect(reopened.listGallery({ source: "all", limit: 10 }).total).toBe(2);
+    expect(await reopened.status()).toMatchObject({
+      lagCount: 0,
+      lastIndexedMarker: nextMarkerId,
+    });
+    reopened.close();
   });
 
   it("rejects a committed record whose digest changed", async () => {

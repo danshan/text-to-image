@@ -373,9 +373,8 @@ export async function rebuildReadModel(
   const database = new DatabaseSync(temporaryPath);
   try {
     createSchema(database);
-    const markerPaths = await listJsonFiles(join(root, "archive", "commits"));
-    for (const [index, markerPath] of markerPaths.entries()) {
-      const marker = asCommitMarker(await readJson(markerPath), markerPath);
+    const markerEntries = await listCommitMarkers(root);
+    for (const [index, { markerPath, marker }] of markerEntries.entries()) {
       if (basename(markerPath, ".json") !== marker.id) {
         throw new TypeError(`Commit Marker filename does not match its id: ${markerPath}`);
       }
@@ -387,7 +386,7 @@ export async function rebuildReadModel(
         database.exec("ROLLBACK");
         throw error;
       }
-      onProgress?.({ processed: index + 1, total: markerPaths.length, markerId: marker.id });
+      onProgress?.({ processed: index + 1, total: markerEntries.length, markerId: marker.id });
     }
     await applyCuration(database, root);
     rebuildSearch(database);
@@ -425,8 +424,25 @@ export async function assertLibraryManifestPresent(libraryRoot: string): Promise
 }
 
 export async function latestMarkerId(libraryRoot: string): Promise<string | null> {
-  const markers = await listJsonFiles(join(resolve(libraryRoot), "archive", "commits"));
-  return markers.length === 0 ? null : basename(markers.at(-1) ?? "", ".json");
+  const markers = await listCommitMarkers(resolve(libraryRoot));
+  return markers.at(-1)?.marker.id ?? null;
+}
+
+async function listCommitMarkers(
+  libraryRoot: string,
+): Promise<Array<{ markerPath: string; marker: ReturnType<typeof asCommitMarker> }>> {
+  const markerPaths = await listJsonFiles(join(libraryRoot, "archive", "commits"));
+  const markers = await Promise.all(
+    markerPaths.map(async (markerPath) => ({
+      markerPath,
+      marker: asCommitMarker(await readJson(markerPath), markerPath),
+    })),
+  );
+  return markers.sort(
+    (left, right) =>
+      left.marker.createdAt.localeCompare(right.marker.createdAt) ||
+      left.marker.id.localeCompare(right.marker.id),
+  );
 }
 
 export function relativeIndexPath(libraryRoot: string, indexPath: string): string {

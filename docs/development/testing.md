@@ -9,6 +9,7 @@ related:
   - ../design/generation-workflow.md
   - ../design/web-ui.md
   - guide.md
+  - ../adr/0010-enable-web-controlled-library-hot-switching.md
 ---
 
 # 测试策略
@@ -43,6 +44,7 @@ related:
 - Reference Image roles 和 `other` guidance rule.
 - Prompt Revision parent validation 与 cycle detection.
 - Generation terminal status combinations.
+- Safety Rejection error mapping、moderation stage 与 category preservation.
 - Replay relation.
 - transaction state transitions.
 - lock ownership decision.
@@ -63,6 +65,8 @@ related:
 - invalid timestamp、UUID、hash 和 path.
 - cross-record dangling reference.
 - future `schemaVersion`.
+- Generation error without `moderation` and with valid input、output、unknown stages.
+- invalid moderation stage、duplicate categories 与 unexpected provider fields.
 
 所有 `fixtures/asset-libraries/v1-invalid-*` 必须返回稳定 error code 和 precise relative path.
 
@@ -82,10 +86,17 @@ JSON examples embedded in正式文档必须被提取并解析; 标记为 illustr
 - uncommitted final object detection.
 - cache delete/rebuild.
 - missing manifest does not create Library root、`.cache/` 或 SQLite index.
+- 运行中的 active Library 被删除后, next request boundary 返回 `LIBRARY_UNAVAILABLE`.
+- Initialize/select transition 在持久化与切换前 full validate 并重建 candidate.
+- Transition commit 排空旧请求, 保持一个 active context, 后续失败时保留已初始化 candidate.
 - external Library absolute path.
 - root symlink canonicalization 与 internal symlink rejection.
 - Curation/Draft atomic update conflict.
 - no physical Archive deletion.
+- init 和 select 仅在成功后原子持久化 canonical Library path.
+- Library Merge dry run、same-root rejection、identity conflict、destination-wins、deduplication 和重复执行.
+- interrupted Library Merge 在 Marker 前不可见, 并可通过既有 recovery commit 完成.
+- read model 启动时按 Marker `createdAt` 检测 lag, 不依赖随机 UUID filename order.
 
 每个测试结束先断言 temp target 位于 test-owned root, 再删除. 禁止使用 workspace root、`$HOME` 或 unresolved variable 作为 cleanup target.
 
@@ -131,6 +142,8 @@ before_lock_release
 - no-reference success.
 - multi-reference roles and guidance.
 - known tool failure.
+- input、output 与 unknown-stage Safety Rejection.
+- Safety Rejection 只归档 stable code、summary、retryable 和 bounded moderation metadata.
 - invocation result lost.
 - output capture failure.
 - multiple Outputs.
@@ -164,11 +177,14 @@ Fastify injection 或 loopback server 覆盖:
 
 - request/response Schema.
 - stable error codes.
+- Generation Issues latest-per-active-Creation derivation, including `shelved` exclusion and later success.
 - cursor pagination.
 - search/filter/sort combination.
 - Curation expected revision conflict.
 - read-only degraded mode.
-- initialization-required bootstrap、`503` API guard 与 exact init command.
+- unavailable bootstrap、`503 LIBRARY_UNAVAILABLE` data API guard 与 always-available Library control plane.
+- Library transition 接受绝对目标路径, 且不存在通用 filesystem directory listing endpoint.
+- Library switch 轮换 session token 并拒绝 stale Browser tab.
 - invalid Host、Origin、token 与 CORS preflight.
 - path traversal、encoded traversal、invalid hash 和 arbitrary path parameters.
 - session token rotates on restart.
@@ -179,7 +195,11 @@ Fastify injection 或 loopback server 覆盖:
 Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow:
 
 - Gallery loading、empty、no-results、error 和 degraded states.
-- first-run initialization screen 显示 resolved path 与 exact init command, 且不请求 Gallery.
+- Gallery Generation Issues region 与 Image Asset grid 保持分离.
+- Safety Rejection 显示 stage、categories、非归罪文案和 `Review Prompt` action.
+- 后续 succeeded Generation 移除同一 active Creation 的 Issue, Timeline 仍保留历史失败.
+- unavailable flow 导航到 Settings, 显示 resolved absolute path、Initialize、Select 与 Retry, 且不请求 Gallery.
+- Library transition 显示 monotonic stage/count progress, 成功后 reload, 失败保留 actionable target path.
 - filter URL round-trip 与 browser back/forward.
 - Gallery -> Image -> Generation -> Creation provenance navigation.
 - Prompt branch selection 与 diff labels.
@@ -187,7 +207,8 @@ Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow
 - Recovery dry-run 与 state-specific actions.
 - external Draft edit conflict.
 - light/dark/system theme.
-- narrow/desktop layouts.
+- Desktop layout snapshots at `1024x768`, `1280x720`, `1366x768`, `1440x900` and `1920x1080`.
+- fixed 200 px sidebar, compact page header, readable type scale and two-column detail inspector at the minimum desktop width.
 - keyboard-only navigation、skip link、dialog focus return 和 visible focus.
 
 Playwright failure artifact 保留 screenshot、trace 和 server log. 默认 retry 不得掩盖 deterministic failure; CI retry policy 必须单独记录 flaky reason.

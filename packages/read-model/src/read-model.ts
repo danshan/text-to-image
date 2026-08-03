@@ -6,6 +6,7 @@ import type {
   GalleryQuery,
   IndexedCreation,
   IndexedGeneration,
+  IndexedGenerationIssue,
   IndexedImage,
   IndexedRevision,
   IndexStatus,
@@ -102,7 +103,9 @@ export class ReadModel {
       this.close();
       if (options.rebuildIfMissing === false) throw error;
       await this.rebuild();
+      return;
     }
+    if ((await this.status()).lagCount > 0) await this.rebuild();
   }
 
   close(): void {
@@ -381,8 +384,51 @@ export class ReadModel {
       startedAt: stringColumn(row, "started_at"),
       completedAt: stringColumn(row, "completed_at"),
       error:
-        row.error_json === null ? null : parseJson<Record<string, unknown>>(row.error_json, {}),
+        row.error_json === null
+          ? null
+          : parseJson<IndexedGeneration["error"]>(row.error_json, null),
     };
+  }
+
+  listGenerationIssues(limit = 100): IndexedGenerationIssue[] {
+    const boundedLimit = Math.min(Math.max(limit, 1), 100);
+    const rows = this.#db()
+      .prepare(
+        `WITH latest AS (
+          SELECT
+            g.id,
+            g.creation_id,
+            c.title AS creation_title,
+            g.status,
+            g.outcome_known,
+            g.completed_at,
+            g.error_json,
+            ROW_NUMBER() OVER (
+              PARTITION BY g.creation_id
+              ORDER BY g.completed_at DESC, g.id DESC
+            ) AS row_number
+          FROM generations g
+          JOIN creations c ON c.id = g.creation_id
+          WHERE c.status = 'active'
+        )
+        SELECT * FROM latest
+        WHERE row_number = 1 AND status IN ('failed', 'interrupted')
+        ORDER BY completed_at DESC, id DESC
+        LIMIT ?`,
+      )
+      .all(boundedLimit) as SqlRow[];
+    return rows.map((row) => ({
+      generationId: stringColumn(row, "id"),
+      creationId: stringColumn(row, "creation_id"),
+      creationTitle: stringColumn(row, "creation_title") || "Untitled Creation",
+      status: stringColumn(row, "status") as IndexedGenerationIssue["status"],
+      outcomeKnown: numberColumn(row, "outcome_known") === 1,
+      completedAt: stringColumn(row, "completed_at"),
+      error:
+        row.error_json === null
+          ? null
+          : parseJson<IndexedGenerationIssue["error"]>(row.error_json, null),
+    }));
   }
 
   getGenerations(creationId: string): IndexedGeneration[] {

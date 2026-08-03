@@ -9,7 +9,7 @@
 _Avoid_: Project, job, gallery
 
 **Prompt Draft**:
-Creation 中当前可修改的提示词工作稿. 它不属于永久生成历史.
+Creation 中由用户维护的当前可修改提示词工作稿. 它保留用户编写的内容与语言, 不因 Generation 成功、失败或中断而被 effective Prompt 自动替换; 它不属于永久生成历史.
 _Avoid_: Current version, latest revision
 
 **Prompt Revision**:
@@ -59,6 +59,14 @@ _Avoid_: Archive metadata, generation history
 **Asset Library**:
 本地资产集合, 是提示词、参考图、生成图片及其关系的事实来源.
 _Avoid_: Gallery, database, output folder
+
+**Library Unavailable**:
+当前解析到的 Asset Library root 或 manifest 不存在或不可访问的生命周期状态. 它表示事实来源不可用, 不等同于 Archive corruption 或 Index failure.
+_Avoid_: Invalid Library, broken Gallery, rebuildable Index
+
+**Library Merge**:
+将完整 source Asset Library 的内容合并到 current destination Asset Library 的受控流程. Source 保持只读, destination 保留其 Library 身份.
+_Avoid_: Library Import, folder copy
 
 **Generation Workflow**:
 由 Codex 驱动的流程, 从 Asset Library 读取生成输入, 并将结果归档回 Asset Library.

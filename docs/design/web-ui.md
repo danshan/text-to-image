@@ -10,6 +10,7 @@ related:
   - ../adr/0005-use-a-rebuildable-sqlite-read-model.md
   - ../adr/0007-separate-curation-from-provenance.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
+  - ../adr/0010-enable-web-controlled-library-hot-switching.md
 ---
 
 # Web UI 设计
@@ -39,18 +40,18 @@ Web UI 是单用户、本地、client-rendered 的 Asset Library read-and-curate
 | ---------------------------- | ------------------------------------------------------- |
 | `/gallery`                   | 默认图片网格、search、filter 与 sort                    |
 | `/references`                | 外部导入与曾作为 Reference Image 的资产                 |
-| `/creations`                 | Creation 列表与 `active                                 | shelved` 过滤 |
+| `/creations`                 | Creation 列表与 `active \| shelved` 过滤                |
 | `/creations/:creationId`     | Prompt branch、Generation timeline 与 Creation Curation |
 | `/images/:sha256`            | Image Asset provenance、引用与 Image Curation           |
 | `/generations/:generationId` | 一次工具调用的完整输入、输出和状态                      |
 | `/recovery`                  | staging、quarantine、lock 与恢复操作                    |
-| `/settings`                  | 当前 Library、format、index 和 server diagnostics       |
+| `/settings`                  | Library path、hot switch、format、index 与 diagnostics  |
 
 根路径重定向到 `/gallery`. 非法 ID 返回 typed not-found state, 不回退到空页面.
 
 ### Global Navigation
 
-Desktop 使用固定 left rail, main area 顶部提供全局 search 与 Library health. Narrow viewport 把 rail 收敛为可访问 drawer, main content 保持完整路由.
+Desktop 使用固定 200 px left rail, main area 顶部提供全局 search 与 Library health. 本阶段只支持桌面宽度, 最小 viewport 为 `1024x768`; 不提供移动 drawer 或 icon rail. 在窄桌面宽度下压缩 inspector 与内容列, 不隐藏主导航.
 
 ```text
 +------------------+--------------------------------------------------+
@@ -65,11 +66,11 @@ Desktop 使用固定 left rail, main area 顶部提供全局 search 与 Library 
 +------------------+--------------------------------------------------+
 ```
 
-Library health 至少显示 `healthy`, `indexing`, `degraded`, `recovery_required`, `read_only`.
+Library health 至少显示 `healthy`, `indexing`, `degraded`, `recovery_required`, `read_only`, `unavailable`.
 
 ## Visual Language
 
-UI 使用 content-first minimal frame. 图片本身提供主要色彩, chrome 保持中性, 不使用 decorative gradient、glassmorphism、neon 或夸张 motion.
+UI 使用 `Compact Editorial Workspace` frame. 图片本身提供主要色彩, chrome 保持中性, 保留 archive/editorial 的 mono metadata 与 registration language, 但减少装饰性留白和大 hero. 不使用 decorative gradient、glassmorphism、neon 或夸张 motion.
 
 ### Typography
 
@@ -81,6 +82,10 @@ UI 使用 content-first minimal frame. 图片本身提供主要色彩, chrome �
 ```
 
 Prompt、hash、ID 与 JSON snippet 使用 mono. 正文、导航和 Curation 使用 sans. 不从 Google Fonts 或其他远程 origin 加载字体.
+
+Desktop type scale 以可读密度为目标: body 默认 `14px`, editor 与主要 form control `14px` 以上, 重要 heading `28-48px`, section heading `20px`, metadata 和 status 最小 `11px`. 不使用 8-10 px 的功能性文字. Page header 与 topbar 合计保持紧凑, 不使用独立的装饰性 hero 区.
+
+Sidebar 始终使用独立深色 token, Light、Dark 和 System 只改变 main workspace. Active navigation 使用高对比浅色底, secondary text、border 与 focus ring 使用独立 token, 避免把 workspace surface token 混入 sidebar.
 
 ### Color Tokens
 
@@ -128,11 +133,26 @@ Dark:
 
 ## Gallery
 
+### Generation Issues
+
+Gallery 在 Image Asset 网格上方提供独立的 `Generation Issues` semantic region. 它不是图片卡片集合, 不创建 placeholder Image Asset, 也不改变 Gallery grid 的排序、过滤和键盘阅读顺序.
+
+每个 active Creation 最多贡献一条 Issue, 只检查该 Creation 最新 Generation:
+
+- 最新 Generation 为 `failed` 或 `interrupted`: 显示 Issue.
+- 最新 Generation 为 `succeeded`: 不显示 Issue.
+- 新 Generation 替换同一 Creation 的旧 Issue; 完整历史仍在 Creation Timeline.
+- `shelved` Creation 不进入该区域.
+
+Issue 按最新 Generation time 排序, 显示 Creation title、terminal status、time 和详情 links. Safety Rejection 额外显示 moderation stage、categories、非归罪说明与 `Review Prompt` action. Output-stage 固定说明生成结果被拒绝且 Prompt 可能提高触发概率, 不使用 Prompt violation 文案.
+
+`Review Prompt` 打开 Generation Detail. 用户从不可变 Prompt Revision 检查实际输入, 再进入 Creation 编辑 Prompt Draft; UI 可以复制 revision instruction 交给 Codex, 但不自动改写 Prompt、不自动高亮推测触发词、不提供一键 retry.
+
 ### Grid
 
-Gallery 使用 masonry-like responsive grid, 但 DOM 严格按当前 sort 顺序排列. 实现不得使用会把视觉列顺序与 DOM 顺序分离的 CSS columns.
+Gallery 使用 desktop responsive grid, 但 DOM 严格按当前 sort 顺序排列. 实现不得使用会把视觉列顺序与 DOM 顺序分离的 CSS columns.
 
-- Desktop: 根据 container width 自适应 3-6 columns.
+- Desktop: 根据 container width 自适应 3-6 columns, 在 `1024x768` 不产生横向 overflow.
 - Minimum card width: 220 px.
 - Card 使用 cache thumbnail, 保持原始 aspect ratio.
 - 首屏 thumbnail eager load, below-fold lazy load.
@@ -221,9 +241,13 @@ GET /api/v1/images/:sha256/content?variant=original
 - Output 顺序与 Image Asset links.
 - built-in tool name、已知 model 和 parameters.
 - Replay source 或 derived Replay links.
-- known failure error category 或 interrupted warning.
+- known failure error code、summary 与 optional moderation metadata, 或 interrupted warning.
 
 Unknown tool fields 显示 `Unknown`, 不显示推测值.
+
+Safety Rejection 使用结构化 warning panel, 不直接渲染 raw JSON. Panel 展示 stage 与工具明确暴露的 categories, 并提供 category-level guidance. Guidance 必须标记为修改建议而非已确认触发词; 只有工具未来返回明确 evidence spans 时才允许精确高亮.
+
+恢复路径固定为 `Review Prompt -> Edit Prompt Draft -> 显式创建新 Generation`. Prompt Revision 和失败 Generation 保持不可变, Web UI 不直接调用图片工具.
 
 ## Recovery Page
 
@@ -268,12 +292,14 @@ API 使用 `/api/v1`. 核心 read endpoints:
 ```text
 GET /api/v1/health
 GET /api/v1/gallery
+GET /api/v1/generation-issues
 GET /api/v1/references
 GET /api/v1/creations
 GET /api/v1/creations/:creationId
 GET /api/v1/images/:sha256
 GET /api/v1/generations/:generationId
 GET /api/v1/recovery
+GET /api/v1/library/transition
 ```
 
 核心 mutation endpoints:
@@ -285,9 +311,13 @@ PUT /api/v1/creations/:creationId/draft
 POST /api/v1/imports
 POST /api/v1/recovery/:transactionId/:action
 POST /api/v1/index/rebuild
+POST /api/v1/library/transitions
+POST /api/v1/library/transitions/:transitionId/commit
 ```
 
-Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴露 Archive generic file write endpoint.
+Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴露 Archive generic file write、filesystem directory listing 或任意文件读取 endpoint.
+
+`GET /api/v1/generation-issues` 返回从权威 Generation、Creation Curation 与 read model 派生的 bounded list. 每项至少包含 Generation ID、Creation ID/title、status、outcomeKnown、time 和 typed error; endpoint 不创建新的 mutable Issue state.
 
 ## Local Service Security
 
@@ -297,8 +327,8 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 - 校验精确 `Host` 和 `Origin`, 不启用 CORS wildcard.
 - 设置 CSP, 至少限制 `default-src 'self'`, image source 为 `'self' blob:`.
 - 静态资源与 API response 默认 `Cache-Control` 清晰区分; bootstrap token 不进入持久 browser cache.
-- server 不返回 Library absolute path, Settings 仅在本机显式 diagnostics 中显示 canonical path.
-- 所有 file access 使用 shared path resolver, 先 canonicalize 再执行 root containment 与 symlink checks.
+- Server 只在 bootstrap 与 Library transition response 中返回 resolved absolute Library path.
+- Library path 由 shared resolver canonicalize, 并受 Server OS account permissions 限制; Archive file access 仍使用 shared root containment.
 
 ## Loading, Empty, Error and Degraded States
 
@@ -307,6 +337,7 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 - 单个坏 Curation record 不阻断整个 Gallery, 以局部 diagnostic card 表示.
 - Archive corruption 使 service 进入 read-only degraded mode, 阻断 mutation 并提供 validator report.
 - API error 使用 stable code、human message、recovery hint 与 correlation ID.
+- Library transition 显示单个 monotonic stage/count progress; ready 后执行短 commit, 成功后 reload 获取新 bootstrap.
 - browser reload 和 back navigation 恢复 search、filter、scroll anchor 和 focused card where possible.
 
 ## Accessibility
@@ -331,12 +362,13 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 
 ## Failure Handling
 
-- Session token invalid: 清晰提示服务已重启, reload 获取新 bootstrap.
+- Session token invalid: 清晰提示服务已重启或 Library 已切换, reload 获取新 bootstrap.
 - Index unavailable: 显示 rebuild action; Archive detail 可以通过 bounded direct read 进入 diagnostics.
 - Curation conflict: 保留 local draft, 显示 server current state.
 - External Draft edit: editor 切换为 conflict state, 禁止自动保存覆盖.
-- Library moved or permission lost: service 进入 read-only unavailable state, 不创建默认替代目录.
-- Library manifest missing: bootstrap screen 显示 canonical path 与 shell-safe exact init command; 不请求 Gallery 或其他 Library API.
+- Library root、manifest 或 permission lost: service 在首个后续 request 进入统一 `LIBRARY_UNAVAILABLE`, 导航到 Settings, 不创建默认替代目录.
+- Library Unavailable: 只保留 static Web、bootstrap、health、initialize、select 和 Retry control plane; Index rebuild 禁用.
+- Library path 外部恢复: 用户显式 Retry 后执行 full validation、Index prepare 和 atomic switch, 不自动打开.
 - Unsupported format: 显示 required app/Library version, 不提供 force-open.
 
 ## Compatibility
@@ -347,26 +379,31 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
 {
   "apiVersion": "v1",
   "libraryFormatVersion": 1,
-  "initialization": null,
+  "library": {
+    "status": "ready",
+    "libraryRoot": "/Volumes/Media/TextToImageLibrary"
+  },
   "capabilities": {
     "curation": true,
     "recovery": true,
+    "libraryManagement": true,
     "generationFromWeb": false
   }
 }
 ```
 
-如果 `library.json` 不存在, `initialization` 改为:
+如果事实来源不可用, `library` 改为:
 
 ```json
 {
-  "required": true,
+  "status": "unavailable",
   "libraryRoot": "/Volumes/Media/TextToImageLibrary",
-  "initCommand": "npm run assetctl -- init --library '/Volumes/Media/TextToImageLibrary'"
+  "reason": "missing_manifest",
+  "allowedActions": ["initialize", "select", "retry"]
 }
 ```
 
-此状态下 `curation` 与 `recovery` capability 均为 `false`. UI 在 bootstrap 层停止常规 route rendering, 因而不会触发会访问未打开 read model 的请求. 用户完成初始化后必须 restart local service, 再 reload 页面获取新的 bootstrap.
+此状态下 `curation` 与 `recovery` capability 均为 `false`, `libraryManagement` 保持 `true`. UI 只渲染 Settings control plane. Transition commit 成功后 Server 轮换 session token, initiator reload, 其他 tab 的 stale token 被拒绝.
 
 前端遇到不支持的 major API version 时显示 upgrade error, 不尝试猜测 response shape.
 
@@ -375,6 +412,9 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
 - Component tests 覆盖 card、filter、Prompt diff、Curation conflict 和 recovery action states.
 - Accessibility automation 覆盖 route landmarks、labels、contrast、dialog 和 keyboard order.
 - End-to-end tests 覆盖 Gallery -> Image -> Generation -> Creation provenance navigation.
+- Desktop review 覆盖 `1024x768`, `1280x720`, `1366x768`, `1440x900` 和 `1920x1080`, 以及 Light、Dark、System theme. 重点检查首屏 header、controls、第一批内容、两栏 detail、loading、empty、failed、interrupted、degraded 和 conflict states.
+- Component 与 end-to-end tests 覆盖 Generation Issues latest-per-active-Creation derivation、Safety Rejection wording、Review Prompt navigation 和后续 succeeded Generation 消退.
 - Security tests 覆盖 Host、Origin、token、CORS、CSP、path traversal 和 arbitrary file access.
+- Component 与 integration tests 覆盖 absolute Library path、single transition、progress、Library Unavailable navigation、atomic switch 和 stale token rejection.
 - Performance tests 使用 accepted synthetic dataset 与 warm/cold cache cases.
 - Visual regression 覆盖 light、dark、loading、empty、error 和 degraded states.

@@ -11,22 +11,56 @@ export interface ApiProblem {
   correlationId: string;
 }
 
-export interface LibraryInitializationRequired {
-  required: true;
+export type LibraryUnavailableReason = "missing_root" | "missing_manifest" | "permission_denied";
+
+export interface LibraryReady {
+  status: "ready";
   libraryRoot: string;
-  initCommand: string;
 }
+
+export interface LibraryUnavailable {
+  status: "unavailable";
+  libraryRoot: string;
+  reason: LibraryUnavailableReason;
+  allowedActions: Array<"initialize" | "select" | "retry">;
+}
+
+export type LibraryState = LibraryReady | LibraryUnavailable;
 
 export interface BootstrapResponse {
   apiVersion: typeof API_VERSION;
   libraryFormatVersion: number | null;
   sessionToken: string;
-  initialization: LibraryInitializationRequired | null;
+  library: LibraryState;
   capabilities: {
     curation: boolean;
     recovery: boolean;
+    libraryManagement: true;
     generationFromWeb: false;
   };
+}
+
+export type LibraryTransitionAction = "initialize" | "select" | "retry";
+export type LibraryTransitionStage = "preparing" | "ready" | "switching" | "succeeded" | "failed";
+
+export interface LibraryTransition {
+  id: string;
+  action: LibraryTransitionAction;
+  libraryRoot: string;
+  stage: LibraryTransitionStage;
+  processed: number;
+  total: number | null;
+  error: string | null;
+}
+
+export interface LibraryTransitionRequest {
+  action: LibraryTransitionAction;
+  libraryRoot?: string;
+}
+
+export interface LibraryTransitionCommitResponse {
+  transition: LibraryTransition;
+  bootstrap: BootstrapResponse;
 }
 
 export interface HealthResponse {
@@ -102,6 +136,18 @@ export interface PromptRevisionView {
   createdAt: string;
 }
 
+export interface GenerationModeration {
+  stage: "input" | "output" | "unknown";
+  categories: string[];
+}
+
+export interface GenerationError {
+  code: string;
+  summary: string;
+  retryable: boolean;
+  moderation?: GenerationModeration;
+}
+
 export interface GenerationView {
   id: string;
   creationId: string;
@@ -128,8 +174,23 @@ export interface GenerationView {
   };
   startedAt: string;
   completedAt: string;
-  error: Record<string, unknown> | null;
+  error: GenerationError | null;
   prompt?: PromptRevisionView;
+}
+
+export interface GenerationIssue {
+  generationId: string;
+  creationId: string;
+  creationTitle: string;
+  status: "failed" | "interrupted";
+  outcomeKnown: boolean;
+  completedAt: string;
+  error: GenerationError | null;
+}
+
+export interface GenerationIssuesResponse {
+  items: GenerationIssue[];
+  page: PageInfo;
 }
 
 export interface CreationDetail extends CreationSummary {

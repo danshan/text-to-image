@@ -1,6 +1,6 @@
 ---
 name: generate-and-archive
-description: Generate images for a Creation and archive every invocation, effective prompt, reference relation, result, and failure in the configured local Asset Library. Use this workflow when the user explicitly invokes this skill to generate variants, replay a Generation, or recover an interrupted image-generation transaction. Do not use it for unarchived image generation, image editing, masks, or Web UI actions.
+description: Generate images for a Creation and archive every invocation, effective prompt, reference relation, result, and failure in the configured local Asset Library. Preserve the user-authored Prompt Draft while storing the effective Prompt only in the immutable Prompt Revision. Use this workflow when the user explicitly invokes this skill to generate variants, replay a Generation, or recover an interrupted image-generation transaction. Do not use it for unarchived image generation, image editing, masks, or Web UI actions.
 compatibility: Requires the repository assetctl npm script, built-in image_gen tool, view_image, and local filesystem access to the configured Asset Library.
 ---
 
@@ -105,6 +105,8 @@ npm run assetctl -- generation commit --library <library-root> --transaction <tr
 
 Commit 失败时不再次调用图片工具. 使用 recovery inspection 判断幂等 commit 或 quarantine.
 
+如果图片工具明确返回 safety rejection, 使用 `IMAGE_GENERATION_SAFETY_REJECTED` 和可选 bounded `moderation` metadata. Output-stage rejection 必须表述为生成结果被拒绝, 不得断言 Prompt violation. Generation 成功、失败或中断后都不得用 effective Prompt 覆盖用户 Draft; commit 只在 Draft hash 未变化时更新 `basedOnRevisionId`.
+
 ### 8. Report
 
 最终报告必须包含:
@@ -116,5 +118,6 @@ Commit 失败时不再次调用图片工具. 使用 recovery inspection 判断�
 - tool name `image_gen.imagegen`, 已知 model/parameters 或明确 unknown.
 - Reference Image roles 与 guidance 摘要.
 - Draft concurrent edit, index degraded, quality observation 或 recovery warning.
+- Draft 正文保持用户编写的原文和语言; effective Prompt 仅通过 Prompt Revision 报告.
 
 不要把 tool success 等同于 Archive success. 只有有效 Commit Marker 发布后才能报告 committed.

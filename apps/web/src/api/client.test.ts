@@ -5,8 +5,13 @@ const bootstrap = {
   apiVersion: "v1" as const,
   libraryFormatVersion: 1,
   sessionToken: "session-secret",
-  initialization: null,
-  capabilities: { curation: true, recovery: true, generationFromWeb: false as const },
+  library: { status: "ready" as const, libraryRoot: "/tmp/image-library" },
+  capabilities: {
+    curation: true,
+    recovery: true,
+    libraryManagement: true as const,
+    generationFromWeb: false as const,
+  },
 };
 
 describe("ApiClient", () => {
@@ -64,5 +69,43 @@ describe("ApiClient", () => {
       "/api/v1/recovery/transaction-1/commit",
       expect.objectContaining({ body: JSON.stringify({ dryRun: true }) }),
     );
+  });
+
+  it("loads the bounded latest Generation Issues response", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(Response.json({ items: [], page: { nextCursor: null, total: 0 } }));
+    const client = new ApiClient(bootstrap, fetcher);
+
+    await expect(client.generationIssues()).resolves.toEqual({
+      items: [],
+      page: { nextCursor: null, total: 0 },
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/generation-issues",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  });
+
+  it("notifies the application when a data request detects Library Unavailable", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      Response.json(
+        {
+          code: "LIBRARY_UNAVAILABLE",
+          message: "The Asset Library is unavailable.",
+          correlationId: "request-1",
+        },
+        { status: 503 },
+      ),
+    );
+    const listener = vi.fn();
+    window.addEventListener("library-unavailable", listener);
+    const client = new ApiClient(bootstrap, fetcher);
+
+    await expect(client.gallery("")).rejects.toMatchObject({
+      body: { code: "LIBRARY_UNAVAILABLE" },
+    });
+    expect(listener).toHaveBeenCalledOnce();
+    window.removeEventListener("library-unavailable", listener);
   });
 });

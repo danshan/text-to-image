@@ -2,7 +2,7 @@
 title: Generation Workflow Design
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 related:
   - ../../CONTEXT.md
   - asset-library.md
@@ -235,7 +235,9 @@ assetctl generation fail \
   --error-stdin
 ```
 
-result 和 error JSON 均从 stdin 读取. error record 只保存分类、短摘要和可恢复标识, 不保存 secret、完整 transcript 或不受控 stack dump.
+result 和 error JSON 均从 stdin 读取. error record 只保存 stable code、短摘要、可恢复标识和工具明确暴露的 bounded metadata, 不保存 secret、完整 transcript 或不受控 stack dump.
+
+图片工具明确返回 safety moderation rejection 时, Skill 使用 `IMAGE_GENERATION_SAFETY_REJECTED`. 若工具暴露 moderation stage 与 categories, error request 增加 optional `moderation`; 未暴露 stage 时使用 `unknown`, 未暴露 categories 时使用空数组. Request ID 与完整 provider payload 不进入 Archive. Safety Rejection 是 known failure, 不自动 retry; output-stage rejection 不得表述成 Prompt violation.
 
 ### 8. Commit
 
@@ -247,9 +249,9 @@ assetctl generation commit \
 
 writer 按 Asset Library 逻辑提交协议发布 Commit Marker. Skill 不直接移动最终 objects.
 
-### 9. Refresh Draft and Index
+### 9. Refresh Draft Metadata and Index
 
-Commit 后, 如果当前 Draft hash 仍等于 prepare 时的 `draftContentSha256`, writer 把 effective prompt 写回 Draft, 并把 `basedOnRevisionId` 更新为新 Revision. 如果用户在生成期间修改 Draft, 不覆盖用户内容, 只报告 concurrent edit.
+Commit 后, 如果当前 Draft hash 仍等于 prepare 时的 `draftContentSha256`, writer 保留 Draft 的原始正文和语言, 仅把 `basedOnRevisionId` 更新为新 Revision. Generation 成功、失败或中断都不得把 effective Prompt 写回 Draft. 如果用户在生成期间修改 Draft, 不覆盖用户内容, 也不更新其 based-on metadata, 只报告 concurrent edit.
 
 indexer 异步消费 Commit Marker. 索引失败记录 warning, 不回滚 Generation.
 
@@ -312,6 +314,7 @@ Hook 永远不写资产、不自动 repair、不清理 staging. 因为某些工�
 ## Failure Handling
 
 - built-in tool unavailable: finalize known failure if tool明确返回失败; 不自动切换 CLI fallback.
+- safety moderation rejection: 使用 stable error code 和 optional moderation metadata 归档 `failed`; 保留 Prompt Revision, 不自动改写或重试.
 - Codex loses result after invocation: recovery 为 `interrupted`, outcome unknown.
 - Output path inaccessible: 保留 transaction, 请求所需权限或显式 recovery.
 - Reference Asset changed on disk: hash validation 失败, 拒绝调用并报告 Archive corruption.
@@ -322,6 +325,8 @@ Hook 永远不写资产、不自动 repair、不清理 staging. 因为某些工�
 ## Compatibility
 
 Skill 的 supported Library format range 必须显式声明. 新 Schema 未被 Skill 支持时, Skill 拒绝生成, 不进行 best-effort 写入.
+
+当前 development baseline 直接更新 format `1` 的 Safety Rejection contract, 不提供 migration 或旧 reader compatibility guarantee. Existing Library 不符合新 validator 时整体重新初始化; 不把 `.cache/` rebuild 当作 Archive migration.
 
 Skill 调用 CLI 时要求 machine-readable version handshake:
 
@@ -335,7 +340,7 @@ assetctl capabilities --format json
 
 - Prompt augmentation golden tests: 常规优化不改变核心意图.
 - Material-change tests: 主体、构图、用途、风格方向变化必须要求确认.
-- fake generator tests: success、known failure、lost result、multiple Output、Replay.
+- fake generator tests: success、generic known failure、input/output/unknown Safety Rejection、lost result、multiple Output、Replay.
 - fault injection: 每个 state transition 和 commit step 进程中断.
 - Hook tests: protected/allowed path matrix, external Library path, symlink, shell indirection.
 - real smoke: 无 Reference Image、带 Reference Image、Prompt branch 后各执行一次 built-in generation.

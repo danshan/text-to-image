@@ -17,7 +17,7 @@ npm run dev
 
 开发 UI 位于 `http://127.0.0.1:5173`. Fastify service 只监听 loopback. Web UI 不会启动 Codex; 图片生成必须在 Codex 中显式调用 `$generate-and-archive`.
 
-`npm run dev` 不会隐式初始化 Library. 如果配置路径缺少 `library.json`, Server 只启动初始化诊断模式, Web UI 显示解析后的路径和可直接执行的 `assetctl init` 命令. 此过程不会创建 Library 目录、`.cache/` 或 SQLite index.
+`npm run dev` 不会隐式初始化 Library. 如果 root、`library.json` 或访问权限缺失, Server 进入 `LIBRARY_UNAVAILABLE`, Web UI 在 Settings 显示绝对 Library path, 并提供 Initialize、Select 与 Retry. 此状态不会创建 Library 目录、`.cache/`、SQLite index 或 fallback Library; Index rebuild 不能恢复已删除的事实来源.
 
 ## External Library
 
@@ -28,12 +28,27 @@ npm run assetctl -- init --library /Volumes/Media/TextToImageLibrary
 npm run assetctl -- validate --library /Volumes/Media/TextToImageLibrary --full
 ```
 
-若希望 `npm run dev` 持续使用该目录, 创建不进入 Git 的 `text-to-image.local.json`:
+`npm run dev` 持续使用的路径保存在不进入 Git 的 `text-to-image.local.json`:
 
 ```json
 {
   "library": "/Volumes/Media/TextToImageLibrary"
 }
+```
+
+成功执行 `init --library` 后, CLI 会自动写入上述本机配置. 已有 Library 使用:
+
+```bash
+npm run assetctl -- library select --library /Volumes/Media/TextToImageLibrary
+```
+
+Settings 也可以输入 Server 账号可访问的绝对路径, 初始化或选择 Library 并热切换 active context. Candidate full validation 与 Index rebuild 完成后才会排空旧请求、原子持久化选择并轮换 session token, 无需重启 Server.
+
+把另一个 Library 的 committed graph 合并到 current Library 前, 先执行 dry run:
+
+```bash
+npm run assetctl -- library merge --source /Volumes/Archive/PreviousLibrary --dry-run
+npm run assetctl -- library merge --source /Volumes/Archive/PreviousLibrary
 ```
 
 Library 解析顺序为 CLI `--library`, `text-to-image.local.json`, tracked `text-to-image.config.json`, 最后是 `./library`. Server 的 `TEXT_TO_IMAGE_LIBRARY` 被视为显式运行参数, 因而覆盖两个配置文件. 相对路径始终按 Git root 解析.

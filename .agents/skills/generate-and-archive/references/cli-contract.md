@@ -100,14 +100,18 @@ stdin request:
 ```json
 {
   "error": {
-    "code": "IMAGE_GENERATION_FAILED",
-    "message": "The built-in image generation tool returned a known failure.",
-    "retryable": false
+    "code": "IMAGE_GENERATION_SAFETY_REJECTED",
+    "message": "The generated result was rejected by safety moderation.",
+    "retryable": false,
+    "moderation": {
+      "stage": "output",
+      "categories": ["sexual"]
+    }
   }
 }
 ```
 
-`message` 只保留短摘要. 即使上游标记 `retryable`, Skill 也不自动 retry.
+`message` 只保留短摘要. Safety rejection 使用 stable code; `moderation` 只保存工具明确暴露的 `input`, `output` 或 `unknown` stage 与最多 20 个去重 category. 不保存 provider transcript、request ID 或 evidence guess. 即使上游标记 `retryable`, Skill 也不自动 retry.
 
 ## Commit
 
@@ -115,4 +119,4 @@ stdin request:
 npm run assetctl -- generation commit --library <library-root> --transaction <transaction-id>
 ```
 
-只把 stdout 中 `committed: true` 且存在有效 Commit Marker 视为 Archive success. Draft hash 冲突和 index failure 是 warning, 不回滚已经提交的 Generation.
+只把 stdout 中 `committed: true` 且存在有效 Commit Marker 视为 Archive success. Commit 后保留用户 Prompt Draft 的原文和语言, hash 未变化时只更新 `basedOnRevisionId`; effective Prompt 只存在于 immutable Prompt Revision. Draft hash 冲突和 index failure 是 warning, 不回滚已经提交的 Generation.

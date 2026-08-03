@@ -8,6 +8,7 @@ related:
   - ../design/asset-library.md
   - ../design/generation-workflow.md
   - ../design/web-ui.md
+  - ../adr/0010-enable-web-controlled-library-hot-switching.md
 ---
 
 # 产品需求
@@ -87,6 +88,14 @@ related:
 
 用户删除 `.cache/`, 重新扫描 Commit Marker 和 Curation, 重建 SQLite read model 与缩略图, 结果不丢失任何权威信息.
 
+### UC-011: Select and Merge Libraries
+
+用户通过 Settings 查看或输入绝对 Library path, 初始化或选择 Asset Library, 并在不重启 local service 的情况下切换 active Library. 用户也可以通过 CLI 选择 Library, 或把一个只读 source Library 的完整已提交历史原子合并到 current destination Library.
+
+### UC-012: Review a Generation Issue
+
+用户在 Gallery 图片网格上方发现 active Creation 最新一次 Generation 的失败或中断提示. Safety Rejection 显示 moderation stage 与 category-level guidance; 用户检查不可变 Prompt Revision, 修改 Prompt Draft, 再显式创建新的 Generation.
+
 ## Functional Requirements
 
 ### Asset Library
@@ -99,7 +108,18 @@ related:
 - `FR-LIB-006`: 用户运行时 Library 整体不进入源码 Git 历史; Schema、fixtures、实现和文档必须进入 Git.
 - `FR-LIB-007`: Archive records、Image Asset 与 Commit Marker 不可原地修改或删除.
 - `FR-LIB-008`: 只有被有效 Commit Marker 覆盖的记录才属于已提交 Archive.
-- `FR-LIB-009`: 缺少 `library.json` 时, Server 必须进入初始化诊断模式并显示 exact init command, 不得创建 Library、cache 或 fallback Library.
+- `FR-LIB-009`: Library root、`library.json` 或访问权限缺失时, Server 必须进入统一的 `LIBRARY_UNAVAILABLE` 状态, 不得创建 Library、cache 或 fallback Library.
+- `FR-LIB-010`: CLI 或 Web 初始化、选择成功后必须原子保存 canonical absolute path 到本机忽略配置; 失败不得改变 active Library 或当前选择.
+- `FR-LIB-011`: 用户可以 full validate 并通过 CLI 或 Web 选择已有 Library, 无需重新初始化或重启 Server.
+- `FR-LIB-012`: Library Merge 必须保持 source 只读, 以 current Library 为 destination, 并通过单个 Commit Marker 原子发布新增 committed graph.
+- `FR-LIB-013`: Library Merge 对相同 identity 和 bytes 去重, 对相同 UUID 的不同内容 fail closed, 对既有 Curation 和 Draft 保留 destination 状态.
+- `FR-LIB-014`: Library Merge 不复制 `inbox/`、cache 或 recovery state, 并提供无写入的 `--dry-run` preflight.
+- `FR-LIB-015`: Server 必须在每个 Library request boundary 检查 active root 与 manifest; 外部删除后首个后续请求进入 `LIBRARY_UNAVAILABLE`.
+- `FR-LIB-016`: Settings 必须显示 resolved absolute Library path, 并允许用户输入 Server 账号可访问的绝对目标路径; API 不得提供通用 filesystem directory listing 或文件读取.
+- `FR-LIB-017`: 同时只允许一个异步 Library transition; candidate validation 与 Index rebuild 在切换临界区外完成并提供 monotonic progress.
+- `FR-LIB-018`: 切换时必须拒绝新 Library 请求、排空旧请求、重新验证 candidate、持久化选择、原子替换 active context 并轮换 session token.
+- `FR-LIB-019`: 原路径恢复后必须由用户显式 Retry, 不得自动打开可能仍在复制的 Library.
+- `FR-LIB-020`: 初始化成功但后续切换失败时保留新 Library, 不自动删除; active context 与旧持久化选择保持不变.
 
 ### Prompt and Generation
 
@@ -113,6 +133,8 @@ related:
 - `FR-GEN-008`: Generation 终态是 `succeeded`, `failed` 或 `interrupted`.
 - `FR-GEN-009`: Retry 和 Replay 永远创建新 Generation.
 - `FR-GEN-010`: Codex 可以自动执行常规 Prompt 优化, 核心意图变化必须二次确认.
+- `FR-GEN-011`: Safety Rejection 使用 stable error code 与可选 `moderation.stage`、`moderation.categories` 归档工具明确暴露的分类.
+- `FR-GEN-012`: Output-stage Safety Rejection 只表示生成结果被拒绝, 不构成 Prompt violation 判定.
 
 ### Transaction and Recovery
 
@@ -136,6 +158,10 @@ related:
 - `FR-UI-007`: 第一版提供全文搜索、组合过滤、URL 可恢复筛选和确定排序.
 - `FR-UI-008`: SQLite 和 thumbnail cache 可以完全删除并重建.
 - `FR-UI-009`: Web UI 只准备输入和展示结果, 不直接启动 Codex.
+- `FR-UI-010`: Server 启动时必须检测 read model marker lag 并在提供当前 Library 查询前完成 rebuild.
+- `FR-UI-011`: Gallery 图片网格只展示 Image Asset; Generation Issue 位于网格上方的独立区域, 不伪装成占位图片.
+- `FR-UI-012`: 每个 active Creation 最多展示一个 Generation Issue, 仅由最新 Generation 的终态决定; `shelved` Creation 不进入该区域.
+- `FR-UI-013`: Safety Rejection 只提供 category-level guidance 与 `Review Prompt` 路径, 不自动高亮触发词、不自动改写 Prompt、不提供一键重试.
 
 ### Codex Controls
 
@@ -153,6 +179,7 @@ related:
 - `NFR-004`: 所有 managed path 必须位于 canonical Library root 内, 禁止 path traversal 和内部 symlink.
 - `NFR-005`: 所有正式行为、Schema、测试与恢复流程必须有仓库内文档.
 - `NFR-006`: 应用在无外部字体和无云服务时可启动并使用已有 Library.
+- `NFR-007`: Web UI 第一版只承诺桌面 viewport `1024x768` 及以上; 使用固定 200 px sidebar、紧凑 page header、统一可读字号和不产生横向 overflow 的 detail 两栏布局.
 
 ## Acceptance Criteria
 
@@ -162,5 +189,10 @@ related:
 - Hook 能阻断非法写入, validator 能发现哈希错误、悬空引用和未提交对象.
 - fake generator 自动测试覆盖成功、失败、中断与 Replay; 发布验收包含真实 Codex 生成 smoke test.
 - Web UI 端到端覆盖图库、详情、Prompt diff、Curation、搜索、过滤与恢复提醒.
+- Web UI 和 API integration 覆盖运行时删除 active Library、绝对路径输入、初始化或选择、transition progress、原子切换和 stale session rejection.
+- Safety Rejection 能归档 input、output 与 unknown moderation stage 及零到多个 categories, 旧的无 `moderation` Generation record 仍通过 Schema 校验.
+- Gallery 对每个 active Creation 只展示最新 failed 或 interrupted Generation Issue; 后续 succeeded Generation 会移除该 Creation 的全局提示, 历史仍可从 Timeline 访问.
+- Generation Detail 对 output-stage rejection 使用非归罪文案和 category-level guidance, 不把建议描述为已确认的触发词.
+- Web UI 在 `1024x768`, `1280x720`, `1366x768`, `1440x900` 和 `1920x1080` 下完成 Light、Dark、System theme 与 keyboard/focus 验收; Sidebar 在所有主题下保持深色且文字、边框和 focus ring 可读.
 - 2,000 Creation、30,000 Generation、10,000 Image Asset 的合成数据上, reference macOS machine 的全量索引重建不超过 60 秒, warm query p95 不超过 200 ms, warm thumbnail 首屏可交互不超过 2 秒.
 - README、AGENTS、Schema、fixtures、设计、开发、测试和恢复文档完整且链接有效.

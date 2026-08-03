@@ -21,7 +21,13 @@
     "schemaVersion": { "const": 1 },
     "id": { "$ref": "common.schema.json#/$defs/uuid" },
     "operation": {
-      "enum": ["initialize_creation", "checkpoint_revision", "import_asset", "generation"]
+      "enum": [
+        "initialize_creation",
+        "checkpoint_revision",
+        "import_asset",
+        "generation",
+        "merge_library"
+      ]
     },
     "state": { "enum": ["prepared", "invocation_started", "outputs_captured", "ready_to_commit"] },
     "creationId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }] },

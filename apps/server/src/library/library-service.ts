@@ -2,11 +2,16 @@ import { createHash } from "node:crypto";
 import type {
   CreationDetail,
   GenerationView,
+  GenerationIssuesResponse,
   GalleryResponse,
   ImageDetail,
   ImageSummary,
 } from "@text-to-image/api-contract";
-import type { GalleryQuery, IndexedGeneration } from "@text-to-image/read-model";
+import type {
+  GalleryQuery,
+  IndexedGeneration,
+  IndexedGenerationIssue,
+} from "@text-to-image/read-model";
 import type { ReadModel } from "@text-to-image/read-model";
 import type { ArchivePort } from "../shared/archive-port.js";
 import { NotFoundError } from "../shared/errors.js";
@@ -16,6 +21,10 @@ function hash(content: string): string {
 }
 
 function toGeneration(value: IndexedGeneration): GenerationView {
+  return value;
+}
+
+function toGenerationIssue(value: IndexedGenerationIssue): GenerationIssuesResponse["items"][number] {
   return value;
 }
 
@@ -43,6 +52,11 @@ export class LibraryService {
       items: result.items.map(toImageSummary),
       page: { nextCursor: result.nextCursor, total: result.total },
     };
+  }
+
+  generationIssues(limit?: number): GenerationIssuesResponse {
+    const items = this.readModel.listGenerationIssues(limit).map(toGenerationIssue);
+    return { items, page: { nextCursor: null, total: items.length } };
   }
 
   async creation(id: string): Promise<CreationDetail> {

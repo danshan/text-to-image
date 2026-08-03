@@ -1,5 +1,6 @@
 import type { ApiClient } from "../api/client";
 import { GalleryFilters } from "../components/gallery-filters";
+import { GenerationIssuesRegion } from "../components/generation-issues-region";
 import { ImageGrid } from "../components/image-grid";
 import { EmptyState, ErrorState, PageSkeleton } from "../components/states";
 import { useApiResource } from "../hooks/use-api-resource";
@@ -14,6 +15,9 @@ import {
 export function GalleryPage({ api, search }: { api: ApiClient; search: string }) {
   const query = parseGalleryQuery(search);
   const resource = useApiResource(`gallery:${search}`, (signal) => api.gallery(search, signal));
+  const issuesResource = useApiResource("generation-issues", (signal) =>
+    api.generationIssues(signal),
+  );
 
   const updateQuery = (next: typeof query) => navigate(`/gallery${serializeGalleryQuery(next)}`);
   const isFiltered = Boolean(query.q || activeFilterCount(query));
@@ -47,6 +51,12 @@ export function GalleryPage({ api, search }: { api: ApiClient; search: string })
       {resource.status === "error" && (
         <ErrorState error={resource.error} onRetry={resource.reload} />
       )}
+      <GenerationIssuesRegion
+        issues={issuesResource.data?.items}
+        status={issuesResource.status}
+        error={issuesResource.error}
+        onRetry={issuesResource.reload}
+      />
       {resource.data && resource.data.items.length > 0 && (
         <>
           <div className="result-register">

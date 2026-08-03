@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiClient } from "../api/client";
+import { LibraryManager } from "../components/library-manager";
 import { RecordError, RecordLoading } from "../components/states";
 import { HealthBadge } from "../components/status";
 import { useApiResource } from "../hooks/use-api-resource";
@@ -32,9 +33,11 @@ export function SettingsPage({ api, bootstrap }: { api: ApiClient; bootstrap: We
         <p>Runtime capabilities and rebuildable state for the currently opened Library.</p>
       </header>
       <div className="settings-grid">
+        <LibraryManager api={api} bootstrap={bootstrap} />
         <section>
           <span className="eyebrow">Library</span>
           <h2>{bootstrap.libraryName ?? "Image Workspace"}</h2>
+          <code>{bootstrap.library.libraryRoot}</code>
           <HealthBadge status={health.data.status} />
           <dl className="stacked-facts">
             <div>
@@ -77,9 +80,11 @@ export function SettingsPage({ api, bootstrap }: { api: ApiClient; bootstrap: We
             </div>
           </dl>
           <p>Rebuilding deletes no Archive or Curation data.</p>
-          <button className="button button--primary" onClick={() => void rebuild()}>
-            Rebuild index
-          </button>
+          {bootstrap.library.status === "ready" && (
+            <button className="button button--primary" onClick={() => void rebuild()}>
+              Rebuild index
+            </button>
+          )}
           {message && (
             <p className="form-message" role="status">
               {message}

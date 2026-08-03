@@ -2,7 +2,7 @@
 title: Asset Library Design
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 related:
   - ../../CONTEXT.md
   - ../adr/0001-use-the-filesystem-as-the-source-of-truth.md
@@ -12,6 +12,7 @@ related:
   - ../adr/0006-commit-generations-atomically.md
   - ../adr/0007-separate-curation-from-provenance.md
   - ../adr/0009-keep-runtime-libraries-out-of-source-control.md
+  - ../adr/0010-enable-web-controlled-library-hot-switching.md
 ---
 
 # Asset Library 设计
@@ -34,6 +35,7 @@ Asset Library 是提示词、参考图、生成图片和 provenance 的本地事
 8. 所有 managed path 必须位于 canonical Library root 内, 且 managed tree 内不得包含 symlink.
 9. 单个进程一次只打开一个 Library.
 10. breaking format migration 不得原地重写源 Library.
+11. Server 只发布一个 active Library context; runtime switch 必须在排空旧请求后原子替换.
 
 ## Library Resolution
 
@@ -61,6 +63,8 @@ Asset Library 是提示词、参考图、生成图片和 provenance 的本地事
 4. 内建默认值 `./library`.
 
 相对路径始终相对 Git root 解析. 实现必须 canonicalize root, 允许 Library root 自身是 symlink, 但解析后所有后续路径检查都基于真实路径. 如果 Codex sandbox 无权访问仓库外目录, Skill 必须请求目标目录权限, 不得创建替代 Library.
+
+`assetctl init --library <path>` 成功后原子创建或替换 `text-to-image.local.json`, 保存 resolved canonical absolute path. `assetctl library select --library <path>` 对已有 Library 执行 full validation 后使用相同写入路径. 任一操作失败时不得改变原配置.
 
 ## Git Boundary
 
@@ -188,6 +192,8 @@ fixtures 使用小型测试图片和虚构内容, 不包含用户数据.
 
 直接编辑 Markdown 后 hash mismatch 表示外部合法编辑, 不是 Archive corruption. Web UI 必须重新加载内容, 保存时使用 optimistic concurrency check, 禁止静默覆盖.
 
+Generation commit 不替换 Draft 正文. 当 prepare 期间的 Draft hash 仍保持不变时, writer 只更新 `basedOnRevisionId`; effective Prompt 仅属于不可变 Prompt Revision.
+
 ### Prompt Revision
 
 `revisions/<revision-id>/prompt.md` 保存实际执行 Prompt. `revision.json` 保存关系:
@@ -250,6 +256,22 @@ fixtures 使用小型测试图片和虚构内容, 不包含用户数据.
 
 `interrupted` 必须使用 `outcomeKnown: false`. `failed` 表示已知工具调用失败, `succeeded` 表示完整返回. 所有状态均允许零个或多个 Output, 但 validator 会对不寻常组合产生 diagnostic.
 
+Safety Rejection 使用 stable error code 和可选 moderation metadata:
+
+```json
+{
+  "code": "IMAGE_GENERATION_SAFETY_REJECTED",
+  "summary": "The generated result was rejected by safety moderation.",
+  "retryable": false,
+  "moderation": {
+    "stage": "output",
+    "categories": ["sexual"]
+  }
+}
+```
+
+`moderation.stage` 限制为 `input`, `output`, `unknown`. `moderation.categories` 只保存工具明确暴露的去重 string values, 允许为空; 不保存 request ID、完整 provider payload 或 stack trace. `moderation` 为 optional, generic known failure 和旧 record 可以省略. Output-stage Safety Rejection 只证明生成结果被拒绝, 不证明 Prompt 本身违规.
+
 ### Image Asset
 
 Image Asset 的权威 record 就是 content-addressed payload:
@@ -292,7 +314,7 @@ media type、尺寸和 provenance 可以从 payload、Generation records 与 Com
 }
 ```
 
-实际 generation transaction 还必须列出 `revision.json`; 示例仅展示 record shape. Marker filename 必须等于 `id`. `operation` 初始支持 `initialize_creation`, `checkpoint_revision`, `import_asset`, `generation`.
+实际 generation transaction 还必须列出 `revision.json`; 示例仅展示 record shape. Marker filename 必须等于 `id`. `operation` 支持 `initialize_creation`, `checkpoint_revision`, `import_asset`, `generation`, `merge_library`.
 
 一个 path 最多由一个 Commit Marker 首次引入. 已存在 Image Asset 作为 dependency 使用时, 不在新 Marker 中重复声明.
 
@@ -343,6 +365,17 @@ Image Curation:
 5. 原子 rename 为目标 root.
 6. 运行 full validator.
 
+### Runtime Select
+
+1. 用户从 Settings 输入 existing Library 的绝对路径, 或指定不存在或为空的 init target.
+2. Server canonicalize path; init 拒绝 non-empty unknown target.
+3. 单个内存态 transition 在旧 context 之外完成 candidate full validation 与 Index rebuild, 并报告 monotonic progress.
+4. Candidate ready 后, Server 停止接收新 Library request 并排空旧 request.
+5. Server 重新检查 candidate quick validation 与 Index lag, 原子持久化 canonical path, 再替换 active context.
+6. 成功切换后关闭旧 Read Model 并轮换 session token; 旧 Browser tab 必须重新 bootstrap.
+
+初始化成功但步骤 3 到 5 失败时, 新 Library 保留为 detached valid Library, 不自动删除. 持久化或切换失败不得改变旧 active context. 外部恢复原 root 后走同一 pipeline 的显式 Retry, 不自动打开.
+
 ### Import an Image
 
 1. 从 Inbox 或显式 source path 读取 bytes, 不信任 extension.
@@ -351,6 +384,17 @@ Image Curation:
 4. 在 staging 中准备 payload 与 `import_asset` Marker.
 5. 在全局锁内 install-if-absent, 最后发布 Marker.
 6. source file 默认保留; 用户显式要求后才可移出 Inbox.
+
+### Merge a Library
+
+1. current Library 是 destination, `--source` 解析为只读 canonical source root; 两者 root 相同时拒绝.
+2. full validate source 和 destination, 并拒绝 recovery、quarantine 或 lock state.
+3. preflight 全部 committed records、Curation 和 Prompt Draft, 计算有界 report. `--dry-run` 在此结束, 不创建 staging 或 lock.
+4. 相同 UUID/path 且 bytes 相同的 immutable record 与相同 hash 的 Image Asset 复用; 相同 UUID/path 的不同 bytes 使整次 merge 失败.
+5. 新实体复制 source Curation 和 Prompt Draft; 已存在实体完整保留 destination mutable state.
+6. staging 完成后重新核对 source optimistic snapshot. destination 在全局锁内重新检查 collision.
+7. 按 deterministic path order 安装新增内容, 最后发布一个 `merge_library` Commit Marker. Marker 不保存 source path、Library identity 或 snapshot metadata.
+8. `inbox/`、`.cache/`、SQLite、thumbnail 和 recovery state 不参与 merge.
 
 ### Logical Commit
 
@@ -380,10 +424,15 @@ Draft 与 Curation 不使用 Archive lock, 采用 expected hash 或 `entityRevis
 - Curation JSON 损坏: 保留原文件, 报告局部错误; 不影响 Archive 读取.
 - Library version 高于 reader: read-only diagnostic 后拒绝写入.
 - Library version 低于 writer: 要求显式 migration, 不自动执行.
+- Runtime root 或 manifest 消失: 首个后续 request 返回 `LIBRARY_UNAVAILABLE`; Index rebuild 不属于可用 recovery action.
+- Transition prepare 失败: 关闭 candidate handles, 保留旧 context 与持久化选择.
+- Transition commit 失败: 在持久化前保持旧 context; 已完成初始化的 candidate 不自动删除.
 
 ## Compatibility and Migration
 
 Schema 位于 `schemas/asset-library/v<formatVersion>/`. 每次写入都使用当前 Library version 对应 validator.
+
+当前 development baseline 不承担既有 runtime Library 的兼容负担. Safety Rejection contract 直接更新 format `1` Schema; 已符合新 validator 的旧 record 因 optional `moderation` 仍可读取, 但不提供 migration 或旧 reader compatibility guarantee. 发生不兼容时整体重新初始化 runtime Library; `.cache/` rebuild 仍只重建 derived state, 不替代 Library reinitialization.
 
 兼容的 reader 扩展可以读取旧 record 而不修改 Archive. Breaking migration 使用:
 

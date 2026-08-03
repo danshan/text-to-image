@@ -7,13 +7,18 @@ import type {
   DraftPutRequest,
   GalleryResponse,
   GenerationView,
+  GenerationIssuesResponse,
   HealthResponse,
   ImageDetail,
   ImageSummary,
+  LibraryTransition,
+  LibraryTransitionAction,
+  LibraryTransitionCommitResponse,
   MutationResponse,
   RecoveryAction,
   RecoveryResponse,
 } from "../types";
+export type { GenerationIssue } from "../types";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -69,6 +74,12 @@ export class ApiClient {
           correlationId: response.headers.get("X-Correlation-ID") ?? "unknown",
         };
       }
+      if (body.code === "LIBRARY_UNAVAILABLE") {
+        window.dispatchEvent(new Event("library-unavailable"));
+      }
+      if (body.code === "INVALID_SESSION") {
+        window.dispatchEvent(new Event("session-invalid"));
+      }
       throw new ApiError(response.status, body);
     }
 
@@ -78,6 +89,33 @@ export class ApiClient {
 
   health(signal?: AbortSignal): Promise<HealthResponse> {
     return this.request("/api/v1/health", {}, { signal });
+  }
+
+  async libraryTransition(signal?: AbortSignal): Promise<LibraryTransition | null> {
+    const result = await this.request<{ data: LibraryTransition | null }>(
+      "/api/v1/library/transition",
+      {},
+      { signal },
+    );
+    return result.data;
+  }
+
+  async startLibraryTransition(
+    action: LibraryTransitionAction,
+    libraryRoot?: string,
+  ): Promise<LibraryTransition> {
+    const result = await this.request<{ data: LibraryTransition }>("/api/v1/library/transitions", {
+      method: "POST",
+      body: JSON.stringify({ action, ...(libraryRoot ? { libraryRoot } : {}) }),
+    });
+    return result.data;
+  }
+
+  commitLibraryTransition(transitionId: string): Promise<LibraryTransitionCommitResponse> {
+    return this.request(`/api/v1/library/transitions/${encodeURIComponent(transitionId)}/commit`, {
+      method: "POST",
+      body: "{}",
+    });
   }
 
   gallery(query: string, signal?: AbortSignal): Promise<GalleryResponse> {
@@ -105,6 +143,10 @@ export class ApiClient {
 
   generation(id: string, signal?: AbortSignal): Promise<GenerationView> {
     return this.request(`/api/v1/generations/${encodeURIComponent(id)}`, {}, { signal });
+  }
+
+  generationIssues(signal?: AbortSignal): Promise<GenerationIssuesResponse> {
+    return this.request("/api/v1/generation-issues", {}, { signal });
   }
 
   recovery(signal?: AbortSignal): Promise<RecoveryResponse> {

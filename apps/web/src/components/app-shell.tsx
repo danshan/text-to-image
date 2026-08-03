@@ -1,22 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import type { ApiClient } from "../api/client";
 import { useApiResource } from "../hooks/use-api-resource";
-import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { useTheme } from "../hooks/use-theme";
 import { Link, navigate, type BrowserLocation } from "../router";
 import { parseGalleryQuery, serializeGalleryQuery } from "../state/gallery-query";
 import type { WebBootstrap } from "../types";
-import {
-  CloseIcon,
-  GridIcon,
-  ImageIcon,
-  MenuIcon,
-  SearchIcon,
-  SettingsIcon,
-  StackIcon,
-  SunIcon,
-  WrenchIcon,
-} from "./icons";
+import { GridIcon, ImageIcon, SearchIcon, SettingsIcon, StackIcon, WrenchIcon } from "./icons";
 import { HealthBadge } from "./status";
 
 const navItems = [
@@ -40,15 +29,12 @@ export function AppShell({
 }) {
   const health = useApiResource("health", (signal) => api.health(signal));
   const { preference, setPreference } = useTheme();
-  const [navOpen, setNavOpen] = useState(false);
   const [search, setSearch] = useState(() => parseGalleryQuery(location.search).q);
   const [searchDirty, setSearchDirty] = useState(false);
-  const mobileNavRef = useDialogFocus<HTMLElement>(navOpen, () => setNavOpen(false));
 
   useEffect(() => {
     if (location.pathname === "/gallery") setSearch(parseGalleryQuery(location.search).q);
     setSearchDirty(false);
-    setNavOpen(false);
   }, [location.pathname, location.search]);
 
   useEffect(() => {
@@ -80,38 +66,12 @@ export function AppShell({
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <button
-        className="mobile-menu-button icon-button"
-        aria-label="Open library navigation"
-        aria-expanded={navOpen}
-        onClick={() => setNavOpen(true)}
-      >
-        <MenuIcon />
-      </button>
-      {navOpen && (
-        <button
-          className="nav-scrim"
-          aria-label="Close library navigation"
-          onClick={() => setNavOpen(false)}
-        />
-      )}
-      <aside
-        ref={mobileNavRef}
-        className={`sidebar ${navOpen ? "sidebar--open" : ""}`}
-        aria-label="Library navigation"
-      >
+      <aside className="sidebar" aria-label="Library navigation">
         <div className="sidebar-heading">
           <div>
             <span className="brand-index">LOCAL / 01</span>
             <strong>{libraryName}</strong>
           </div>
-          <button
-            className="icon-button sidebar-close"
-            aria-label="Close library navigation"
-            onClick={() => setNavOpen(false)}
-          >
-            <CloseIcon />
-          </button>
         </div>
         <nav>
           <ol className="primary-nav">
@@ -143,10 +103,10 @@ export function AppShell({
             {(["system", "light", "dark"] as const).map((theme) => (
               <button
                 key={theme}
+                className="theme-option"
                 aria-pressed={preference === theme}
                 onClick={() => setPreference(theme)}
               >
-                {theme === "system" && <SunIcon />}
                 {theme}
               </button>
             ))}

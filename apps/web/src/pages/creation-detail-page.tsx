@@ -3,6 +3,7 @@ import type { ApiClient } from "../api/client";
 import { CurationEditor } from "../components/curation-editor";
 import { CopyIcon } from "../components/icons";
 import { formatDate } from "../components/image-grid";
+import { generationFailureSummary } from "../components/generation-issue";
 import { PromptDiff } from "../components/prompt-diff";
 import { RecordError, RecordLoading } from "../components/states";
 import { GenerationStatusBadge } from "../components/status";
@@ -203,6 +204,12 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
                       {generation.outputs.length} outputs · {generation.references.length}{" "}
                       references{generation.replayOfGenerationId ? " · replay" : ""}
                     </p>
+                    {generation.status !== "succeeded" && (
+                      <div className="timeline-issue" role="status">
+                        <span>{generationFailureSummary(generation)}</span>
+                        <Link to={`/generations/${generation.id}`}>Review Prompt</Link>
+                      </div>
+                    )}
                     {generation.outputs.length > 0 && (
                       <div className="timeline-images">
                         {generation.outputs.map((output) => (

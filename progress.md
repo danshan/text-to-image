@@ -114,53 +114,118 @@
   - 修正 npm workspace 从 `apps/server` 启动时的 Git root 解析, Server 现在向上查找 `.git`, initialization command 指向仓库根目录的 `library/`.
   - 使用真实 `npm run dev` 和 loopback bootstrap 验证 initialization payload、canonical path 与 exact init command.
 
+### Phase 7: Persistent Library Selection and Merge
+
+- **Status:** completed
+- **Started:** 2026-08-03
+- 已完成:
+  - `assetctl init --library` 成功后通过共享 resolver 将 canonical absolute path 原子写入 Git root 的 `text-to-image.local.json`.
+  - 新增 `assetctl library select --library`, full validation 成功后只更新本机选择, 不修改 Archive.
+  - 新增 `assetctl library merge --source [--library <destination>] [--dry-run]`, 将 source committed graph 合并到 current Library.
+  - Merge 对 Creation、Revision、Generation 和 Commit identity 冲突执行全量预检, Image Asset 按 hash 复用, 同 UUID 不同 bytes 整体失败.
+  - Merge 对新增实体复制 Draft 与 Curation, 对已存在实体保留 destination mutable state, 忽略 `inbox/` 与所有 cache/recovery state.
+  - Merge 复用现有 staging、Archive lock、checksum、recovery 与 Marker visibility boundary, 使用单一 `merge_library` Marker 原子发布.
+  - Source 在 staging 前后执行 optimistic snapshot recheck, destination 在锁内重新检查 identity collision.
+  - 修复 Read Model 将随机 Marker UUID 当作顺序的问题, 改为按 `createdAt` 排序, 并在 `open()` 检测 lag 后自动 rebuild.
+  - 更新 domain contract、v1 JSON Schema、CLI capability、README、产品需求、Asset Library、系统架构、开发与测试文档.
+  - 增加 config persistence、select failure preservation、merge dry-run/apply/no-op/conflict/interruption/recovery 和 Read Model marker lag tests.
+  - 安装 Playwright browser binaries, 在 scoped outside-sandbox execution 中完成 Chromium 与 WebKit E2E.
+
+### Phase 8: Generation Issues and Safety Rejection UX
+
+- **Status:** completed
+- **Started:** 2026-08-03
+- 已完成:
+  - 通过逐项设计访谈确认 Gallery placement、structured moderation contract、Draft recovery path、latest-per-active-Creation lifecycle 与 evidence boundary.
+  - 在 `CONTEXT.md` 定义 `Generation Issue` 与 `Safety Rejection`.
+  - 将受影响正式文档切回 `draft`, 同步产品需求、Asset Library、Generation Workflow、Web UI、测试策略与文档索引.
+  - 明确直接更新 format `1`; 当前 development Library 可重新初始化, 不实现 migration 或旧 reader compatibility.
+  - 修复 `commitGeneration` 的根因: effective Prompt 只写入 immutable Prompt Revision, Generation 成功、失败和中断都保留用户 Draft 原文与语言, hash 未变化时只更新 `basedOnRevisionId`.
+  - 扩展 Generation error schema、domain、Archive request、read model、API 与 `GET /api/v1/generation-issues`, 限制 moderation stage/categories 并兼容旧 error record.
+  - 实现 Gallery `Generation Issues` region、Creation Timeline concise failure reason、Generation Detail structured warning panel、category-level guidance 和 explicit Draft recovery links.
+  - 完成 Compact Editorial Workspace desktop UI audit: fixed 200 px dark sidebar, compact header, desktop two-column detail, type scale、theme contrast 和 visible focus.
+  - 更新 Generation Skill、CLI contract、Prompt policy、产品需求、设计与测试文档, 并恢复受影响文档状态为 `accepted`.
+- 验证:
+  - `npm test`: passed, 28 Hook/Skill tests and 23 Web tests.
+  - `npm run test:integration`: passed, 4 files and 33 tests.
+  - `npm run typecheck`, `npm run build`, `npm run lint`, `npm run docs:check`, `npm run fixtures:validate`: passed.
+  - `git diff --check`: passed.
+  - `npm run test:e2e`: passed outside the sandbox, 13 passed and 1 intentional WebKit mutation skip; added Gallery `1024x768` and Creation `1440x900` visual snapshots. The earlier in-sandbox run failed before application assertions because of macOS browser Mach port permissions.
+
+### Phase 9: Runtime Library Management
+
+- **Status:** completed
+- **Started:** 2026-08-03
+- **Completed:** 2026-08-03
+- 已完成:
+  - 定义 `Library Unavailable` contract, 并通过 ADR 0010 固化 absolute path input、candidate preparation、request drain、atomic switch 与 session isolation.
+  - Server 在 request boundary 检测 active Library 删除、manifest 缺失和权限错误; Settings 显示或输入绝对路径, 初始化、选择或重试 Library.
+  - 按反馈删除 directory browser UI、目录列表 API 与对应类型、样式和测试, 避免暴露无必要的 filesystem enumeration surface.
+  - Candidate 在 switching critical section 外完成 validation 与 Read Model rebuild; commit 排空旧请求、持久化选择、切换 context 并轮换 session token.
+  - Stop Hook 将 `ARCHIVE_NOT_INITIALIZED` 识别为可恢复的 unavailable state, 不再错误报告 Archive integrity failure.
+- 验证:
+  - `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm run build` 与 `git diff --check`: passed.
+  - `npm test`: 28 Hook/Skill tests 和 16 Web tests passed.
+  - `npm run test:integration`: 4 files, 30 tests passed.
+  - `npm run test:e2e`: 11 passed, 1 intentional WebKit mutation skip.
+  - `npm run docs:check`: 31 Markdown files 和 10 ADRs passed.
+  - `npm run fixtures:validate`: 2 of 2 fixtures matched.
+  - Phase 9 独立修改的系统架构与开发指南恢复为 `accepted`; 与 Phase 8 共享的正式文档继续保持 `draft`.
+
 ## Test Results
 
-| Test                                | Expected                                                                            | Actual                                                                        | Status |
-| ----------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------ |
-| Clean install                       | Lockfile can reproduce dependencies                                                 | `npm ci` installed 397 packages                                               | pass   |
-| Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                     | pass   |
-| Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 53-module Web build passed | pass   |
-| Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                 | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 27 Hook/Skill tests and 15 Web tests passed                                   | pass   |
-| Integration                         | Archive、read model and HTTP security pass                                          | 4 files, 23 tests passed                                                      | pass   |
-| Browser E2E                         | Chromium and WebKit cover the accepted UI slice                                     | 11 passed, 1 intentional WebKit mutation skip                                 | pass   |
-| Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                 | pass   |
-| Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                     | pass   |
-| Warm Gallery query                  | p95 <= 200 ms                                                                       | 51.92 ms across 100 queries                                                   | pass   |
-| Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                | pass   |
-| External Library                    | Resolver、Generation、Commit、validate and index rebuild work outside repo          | Temporary external Library reached lagCount 0 and full validation passed      | pass   |
-| Documentation structural validation | Links、JSON fences、frontmatter、ADR sequence、punctuation and whitespace are valid | 30 Markdown files and 9 ADRs passed                                           | pass   |
+| Test                                | Expected                                                                            | Actual                                                                                         | Status |
+| ----------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------ |
+| Clean install                       | Lockfile can reproduce dependencies                                                 | `npm ci` installed 397 packages                                                                | pass   |
+| Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                                      | pass   |
+| Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 53-module Web build passed                  | pass   |
+| Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 28 Hook/Skill tests and 16 Web tests passed                                                    | pass   |
+| Integration                         | Archive、read model and HTTP security pass                                          | 4 files, 31 tests passed                                                                       | pass   |
+| Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
+| Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
+| Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                                      | pass   |
+| Warm Gallery query                  | p95 <= 200 ms                                                                       | 51.92 ms across 100 queries                                                                    | pass   |
+| Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                                 | pass   |
+| External Library                    | Resolver、Generation、Commit、validate and index rebuild work outside repo          | Temporary external Library reached lagCount 0 and full validation passed                       | pass   |
+| Documentation structural validation | Links、JSON fences、frontmatter、ADR sequence、punctuation and whitespace are valid | 31 Markdown files and 10 ADRs passed                                                           | pass   |
+| Library selection and merge         | Config persistence、dry-run、atomic apply、conflict and recovery are correct        | Archive and read model integration coverage passed                                             | pass   |
 
 ## Error Log
 
-| Timestamp  | Error                                                                | Attempt | Resolution                                                       |
-| ---------- | -------------------------------------------------------------------- | ------: | ---------------------------------------------------------------- |
-| 2026-08-02 | DNS resolution failed while fetching the Codex manual in the sandbox |       1 | Re-ran with approved network access                              |
-| 2026-08-02 | Initial Markdown prose violated the required document language       |       1 | Rewrote existing glossary and ADR content in Simplified Chinese  |
-| 2026-08-02 | Documentation patch failed because section markers were malformed    |       1 | Split the patch into smaller valid sections                      |
-| 2026-08-02 | Cross-file documentation patch used the wrong hunk context           |       1 | Split updates by target file and validated each context          |
-| 2026-08-02 | `tsx` IPC socket was denied by the Codex sandbox                     |       1 | Re-ran scoped CLI and E2E commands with explicit approval        |
-| 2026-08-02 | Initial npm audit found vulnerable static and image packages         |       1 | Upgraded packages; final registry audit reports zero issues      |
-| 2026-08-02 | SPA route returned `INVALID_SESSION` before bootstrap                |       1 | Required tokens only for protected API routes                    |
-| 2026-08-02 | Full-scale FTS test exceeded timeout due repeated subqueries         |       1 | Materialized one FTS hit set; p95 dropped to 51.92 ms            |
-| 2026-08-02 | Gallery query raced with read model rebuild                          |       1 | Kept old snapshot live until replacement opened and swapped      |
-| 2026-08-02 | Server workspace production build crossed its `rootDir`              |       1 | Added project references and included Server in root build       |
-| 2026-08-02 | WebKit omitted ordinary links from default macOS Tab focus ring      |       1 | Split browser-independent activation from Chromium Tab ordering  |
-| 2026-08-03 | Server build emitted JavaScript and declarations into package source |       1 | Removed exact generated artifacts and corrected project refs     |
-| 2026-08-03 | Documentation check traversed nested dependency and eval workspaces  |       1 | Excluded generated and dependency directories from traversal     |
-| 2026-08-03 | Strict Skill eval assertions required real execution evidence        |       1 | Kept offline scores at zero and documented a future fake harness |
-| 2026-08-03 | Web test used an unavailable `jest-dom` matcher                      |       1 | Replaced it with existing Chai assertions                        |
-| 2026-08-03 | Playwright server could not create a `tsx` IPC socket in the sandbox |       1 | Re-ran the E2E suite with scoped approval                        |
-| 2026-08-03 | Archive adapter factory bypassed initialization diagnostics          |       1 | Removed its eager manifest read and added a factory test         |
-| 2026-08-03 | Server workspace `cwd` resolved `apps/server/library`                |       1 | Resolve the nearest Git root before Library configuration        |
+| Timestamp  | Error                                                                | Attempt | Resolution                                                        |
+| ---------- | -------------------------------------------------------------------- | ------: | ----------------------------------------------------------------- |
+| 2026-08-02 | DNS resolution failed while fetching the Codex manual in the sandbox |       1 | Re-ran with approved network access                               |
+| 2026-08-02 | Initial Markdown prose violated the required document language       |       1 | Rewrote existing glossary and ADR content in Simplified Chinese   |
+| 2026-08-02 | Documentation patch failed because section markers were malformed    |       1 | Split the patch into smaller valid sections                       |
+| 2026-08-02 | Cross-file documentation patch used the wrong hunk context           |       1 | Split updates by target file and validated each context           |
+| 2026-08-02 | `tsx` IPC socket was denied by the Codex sandbox                     |       1 | Re-ran scoped CLI and E2E commands with explicit approval         |
+| 2026-08-02 | Initial npm audit found vulnerable static and image packages         |       1 | Upgraded packages; final registry audit reports zero issues       |
+| 2026-08-02 | SPA route returned `INVALID_SESSION` before bootstrap                |       1 | Required tokens only for protected API routes                     |
+| 2026-08-02 | Full-scale FTS test exceeded timeout due repeated subqueries         |       1 | Materialized one FTS hit set; p95 dropped to 51.92 ms             |
+| 2026-08-02 | Gallery query raced with read model rebuild                          |       1 | Kept old snapshot live until replacement opened and swapped       |
+| 2026-08-02 | Server workspace production build crossed its `rootDir`              |       1 | Added project references and included Server in root build        |
+| 2026-08-02 | WebKit omitted ordinary links from default macOS Tab focus ring      |       1 | Split browser-independent activation from Chromium Tab ordering   |
+| 2026-08-03 | Server build emitted JavaScript and declarations into package source |       1 | Removed exact generated artifacts and corrected project refs      |
+| 2026-08-03 | Documentation check traversed nested dependency and eval workspaces  |       1 | Excluded generated and dependency directories from traversal      |
+| 2026-08-03 | Strict Skill eval assertions required real execution evidence        |       1 | Kept offline scores at zero and documented a future fake harness  |
+| 2026-08-03 | Web test used an unavailable `jest-dom` matcher                      |       1 | Replaced it with existing Chai assertions                         |
+| 2026-08-03 | Playwright server could not create a `tsx` IPC socket in the sandbox |       1 | Re-ran the E2E suite with scoped approval                         |
+| 2026-08-03 | Archive adapter factory bypassed initialization diagnostics          |       1 | Removed its eager manifest read and added a factory test          |
+| 2026-08-03 | Server workspace `cwd` resolved `apps/server/library`                |       1 | Resolve the nearest Git root before Library configuration         |
+| 2026-08-03 | Unit runner excluded Archive integration files                       |       1 | Used the repository integration runner for filesystem coverage    |
+| 2026-08-03 | Read Model treated random Marker UUID order as commit order          |       1 | Sort validated Markers by `createdAt` before rebuild and status   |
+| 2026-08-03 | Temporary-directory CLI smoke could not resolve workspace `tsx`      |       1 | Exercised the CLI entrypoint in-process from integration tests    |
+| 2026-08-03 | Playwright browser binaries were not installed                       |       1 | Installed the pinned Chromium and WebKit binaries                 |
+| 2026-08-03 | Browser processes aborted inside the filesystem sandbox              |       1 | Re-ran E2E with scoped outside-sandbox execution; 11 passed       |
+| 2026-08-03 | E2E server still constructed the removed static Library dependencies |       1 | Updated it to use `LibraryRuntime`; the complete E2E suite passed |
 
 ## 5-Question Reboot Check
 
-| Question             | Answer                                                                        |
-| -------------------- | ----------------------------------------------------------------------------- |
-| Where am I?          | Phase 6 completed                                                             |
-| Where am I going?    | Final handoff                                                                 |
-| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI |
-| What have I learned? | See `findings.md`                                                             |
-| What have I done?    | Implemented the MVP and verified safe first-run Library initialization        |
+| Question             | Answer                                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| Where am I?          | Phase 8 and Phase 9 completed                                                                            |
+| Where am I going?    | Hand off the completed contract, UI review and validation results                                        |
+| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                            |
+| What have I learned? | See `findings.md`                                                                                        |
+| What have I done?    | Added Generation Issue UX, Draft preservation, desktop UI review, and Phase 9 runtime Library management |

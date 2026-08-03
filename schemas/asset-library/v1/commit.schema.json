@@ -8,7 +8,13 @@
     "schemaVersion": { "const": 1 },
     "id": { "$ref": "common.schema.json#/$defs/uuid" },
     "operation": {
-      "enum": ["initialize_creation", "checkpoint_revision", "import_asset", "generation"]
+      "enum": [
+        "initialize_creation",
+        "checkpoint_revision",
+        "import_asset",
+        "generation",
+        "merge_library"
+      ]
     },
     "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
     "records": {

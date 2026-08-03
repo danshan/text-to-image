@@ -308,6 +308,29 @@ describe("Stop", () => {
     assert.doesNotMatch(result.reason, /secret detail/);
   });
 
+  test("allows Stop when the Library is not initialized", () => {
+    const result = evaluateStop(fixture, {
+      resolveLibraryRoot: () => libraryRoot,
+      runValidator: () => ({
+        status: 1,
+        stdout: JSON.stringify({
+          valid: false,
+          diagnostics: [
+            {
+              code: "ARCHIVE_NOT_INITIALIZED",
+              severity: "error",
+              relativePath: "library.json",
+              message: "Library manifest does not exist.",
+            },
+          ],
+        }),
+        stderr: "",
+      }),
+    });
+    assert.equal(result.continue, true);
+    assert.match(result.systemMessage, /Open Web Settings/);
+  });
+
   test("does not create an infinite continuation loop", () => {
     const result = evaluateStop({ ...fixture, stop_hook_active: true });
     assert.equal(result.continue, true);

@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { ArchiveError } from "@text-to-image/domain";
+import { writeJsonAtomic } from "./internal.js";
 
 export interface LibraryResolutionOptions {
   cliPath?: string;
@@ -12,6 +13,11 @@ export interface ResolvedLibrary {
   gitRoot: string;
   libraryRoot: string;
   source: "cli" | "local_config" | "tracked_config" | "default";
+}
+
+export interface PersistedLibrarySelection {
+  configPath: string;
+  libraryRoot: string;
 }
 
 export function findGitRoot(startDirectory = process.cwd()): string {
@@ -87,6 +93,17 @@ export function canonicalizePossiblyMissing(path: string): string {
     });
   }
   return resolve(realpathSync(existingAncestor), ...missingSegments);
+}
+
+export function persistLibrarySelection(
+  gitRootInput: string,
+  libraryRootInput: string,
+): PersistedLibrarySelection {
+  const gitRoot = realpathSync(gitRootInput);
+  const libraryRoot = realpathSync(libraryRootInput);
+  const configPath = join(gitRoot, "text-to-image.local.json");
+  writeJsonAtomic(configPath, { library: libraryRoot });
+  return { configPath, libraryRoot };
 }
 
 function readLibraryConfig(path: string): string {

@@ -12,25 +12,27 @@ import {
   curationPatchSchema,
   draftPutSchema,
   galleryQuerySchema,
+  generationIssuesQuerySchema,
   generationParamsSchema,
   imageParamsSchema,
+  type BootstrapResponse,
   type CurationPatchRequest,
   type DraftPutRequest,
   type GalleryResponse,
   type HealthResponse,
-  type LibraryInitializationRequired,
+  type LibraryTransition,
+  type LibraryTransitionCommitResponse,
+  type LibraryTransitionRequest,
 } from "@text-to-image/api-contract";
-import { ThumbnailCache, type GalleryQuery } from "@text-to-image/read-model";
-import Fastify, { type FastifyInstance } from "fastify";
-import type { LibraryService } from "./library/library-service.js";
-import type { ArchivePort } from "./shared/archive-port.js";
+import type { GalleryQuery } from "@text-to-image/read-model";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { AppError, isErrorWithCode, NotFoundError } from "./shared/errors.js";
+import type { LibraryContext } from "./shared/library-runtime.js";
+import type { LibraryRuntime } from "./shared/library-runtime.js";
 import { installSecurity, SecurityContext } from "./shared/security.js";
 
 export interface AppOptions {
-  archive: ArchivePort;
-  service: LibraryService;
-  initialization?: LibraryInitializationRequired | null;
+  runtime: LibraryRuntime;
   logLevel?: string;
   webRoot?: string;
 }
@@ -111,7 +113,15 @@ export async function createApp(
     bodyLimit: 2 * 1024 * 1024,
   });
   const security = new SecurityContext(randomBytes(32).toString("base64url"));
-  const thumbnails = new ThumbnailCache(options.archive.libraryRoot);
+  const requestContexts = new WeakMap<
+    FastifyRequest,
+    { context: LibraryContext; release: () => void }
+  >();
+  const contextFor = (request: FastifyRequest): LibraryContext => {
+    const lease = requestContexts.get(request);
+    if (!lease) throw new Error("Library context was not acquired for the request");
+    return lease.context;
+  };
   installSecurity(app, security);
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("X-Correlation-ID", request.id);
@@ -149,27 +159,23 @@ export async function createApp(
       .send({ code: "INTERNAL_ERROR", message: "An unexpected error occurred.", correlationId });
   });
 
-  app.addHook("preHandler", async (request, reply) => {
-    if (!options.initialization) return;
+  app.addHook("preHandler", async (request) => {
     const pathname = request.url.split("?", 1)[0] ?? request.url;
-    if (
-      !pathname.startsWith("/api/v1/") ||
-      pathname === "/api/v1/bootstrap" ||
-      pathname === "/api/v1/health"
-    ) {
-      return;
-    }
-    return reply.status(503).send({
-      code: "LIBRARY_INITIALIZATION_REQUIRED",
-      message: `Library manifest does not exist at ${options.initialization.libraryRoot}.`,
-      details: { libraryRoot: options.initialization.libraryRoot },
-      recoveryHint: options.initialization.initCommand,
-      correlationId: request.id,
-    });
+    if (!pathname.startsWith("/api/v1/")) return;
+    if (pathname === "/api/v1/bootstrap" || pathname === "/api/v1/health") return;
+    if (pathname.startsWith("/api/v1/library/")) return;
+    requestContexts.set(request, await options.runtime.acquire());
+  });
+  app.addHook("onResponse", (request) => {
+    const lease = requestContexts.get(request);
+    if (!lease) return;
+    lease.release();
+    requestContexts.delete(request);
   });
 
   const health = async (): Promise<HealthResponse> => {
-    if (options.initialization) {
+    const state = options.runtime.state;
+    if (state.status === "unavailable") {
       return {
         status: "unavailable",
         apiVersion: API_VERSION,
@@ -181,33 +187,68 @@ export async function createApp(
           lagCount: 0,
         },
         recoveryCount: 0,
-        diagnostics: [
-          `Library manifest does not exist at ${options.initialization.libraryRoot}.`,
-          `Initialize it with: ${options.initialization.initCommand}`,
-        ],
+        diagnostics: [`Asset Library is unavailable at ${state.libraryRoot}: ${state.reason}.`],
       };
     }
-    const [index, diagnostics, recovery] = await Promise.all([
-      options.service.readModel.status(),
-      options.archive.diagnostics(),
-      options.archive.listRecovery(),
-    ]);
-    const status = options.archive.readOnly
-      ? "read_only"
-      : diagnostics.length > 0
-        ? "degraded"
-        : recovery.items.length > 0
-          ? "recovery_required"
-          : index.lagCount > 0
-            ? "indexing"
-            : "healthy";
+    try {
+      return await options.runtime.withContext(async ({ archive, readModel }) => {
+        const [index, diagnostics, recovery] = await Promise.all([
+          readModel.status(),
+          archive.diagnostics(),
+          archive.listRecovery(),
+        ]);
+        const status = archive.readOnly
+          ? "read_only"
+          : diagnostics.length > 0
+            ? "degraded"
+            : recovery.items.length > 0
+              ? "recovery_required"
+              : index.lagCount > 0
+                ? "indexing"
+                : "healthy";
+        return {
+          status,
+          apiVersion: API_VERSION,
+          libraryFormatVersion: archive.formatVersion,
+          index,
+          recoveryCount: recovery.items.length,
+          diagnostics,
+        };
+      });
+    } catch (error) {
+      if (error instanceof AppError && error.code === "LIBRARY_UNAVAILABLE") return health();
+      throw error;
+    }
+  };
+
+  const bootstrap = async (): Promise<BootstrapResponse> => {
+    const state = options.runtime.state;
+    let formatVersion: number | null = null;
+    let readOnly = true;
+    if (state.status === "ready") {
+      try {
+        const metadata = await options.runtime.withContext(({ archive }) => ({
+          formatVersion: archive.formatVersion,
+          readOnly: archive.readOnly,
+        }));
+        formatVersion = metadata.formatVersion;
+        readOnly = metadata.readOnly;
+      } catch (error) {
+        if (error instanceof AppError && error.code === "LIBRARY_UNAVAILABLE") return bootstrap();
+        throw error;
+      }
+    }
     return {
-      status,
       apiVersion: API_VERSION,
-      libraryFormatVersion: options.archive.formatVersion,
-      index,
-      recoveryCount: recovery.items.length,
-      diagnostics,
+      libraryFormatVersion: formatVersion,
+      sessionToken: security.sessionToken,
+      library: state,
+      capabilities: {
+        curation: state.status === "ready" && !readOnly,
+        recovery: state.status === "ready",
+        libraryManagement: true,
+        generationFromWeb: false,
+      },
     };
   };
 
@@ -219,37 +260,77 @@ export async function createApp(
   app.get("/api/v1/health", health);
   app.get("/api/v1/bootstrap", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
-    return {
-      apiVersion: API_VERSION,
-      libraryFormatVersion: options.archive.formatVersion,
-      sessionToken: security.sessionToken,
-      initialization: options.initialization ?? null,
-      capabilities: {
-        curation: !options.initialization && !options.archive.readOnly,
-        recovery: !options.initialization,
-        generationFromWeb: false,
-      },
-    };
+    return bootstrap();
   });
+
+  app.get<{ Reply: { data: LibraryTransition | null } }>("/api/v1/library/transition", () => ({
+    data: options.runtime.transition,
+  }));
+  app.post<{ Body: LibraryTransitionRequest; Reply: { data: LibraryTransition } }>(
+    "/api/v1/library/transitions",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["action"],
+          properties: {
+            action: { enum: ["initialize", "select", "retry"] },
+            libraryRoot: { type: "string", minLength: 1, maxLength: 4096 },
+          },
+        },
+      },
+    },
+    async (request, reply) =>
+      reply.status(202).send({
+        data: options.runtime.startTransition(request.body.action, request.body.libraryRoot),
+      }),
+  );
+  app.post<{
+    Params: { transitionId: string };
+    Reply: LibraryTransitionCommitResponse;
+  }>(
+    "/api/v1/library/transitions/:transitionId/commit",
+    {
+      schema: {
+        params: {
+          type: "object",
+          additionalProperties: false,
+          required: ["transitionId"],
+          properties: { transitionId: { type: "string", pattern: "^[0-9a-f-]{36}$" } },
+        },
+      },
+    },
+    async (request) => {
+      const transition = await options.runtime.commitTransition(request.params.transitionId);
+      security.rotateSessionToken();
+      return { transition, bootstrap: await bootstrap() };
+    },
+  );
 
   app.get<{ Querystring: Record<string, unknown>; Reply: GalleryResponse }>(
     "/api/v1/gallery",
     { schema: { querystring: galleryQuerySchema } },
-    (request) => options.service.gallery(galleryQuery(request.query)),
+    (request) => contextFor(request).service.gallery(galleryQuery(request.query)),
   );
   app.get<{ Querystring: Record<string, unknown>; Reply: GalleryResponse }>(
     "/api/v1/references",
     { schema: { querystring: galleryQuerySchema } },
-    (request) => options.service.references(galleryQuery(request.query)),
+    (request) => contextFor(request).service.references(galleryQuery(request.query)),
+  );
+  app.get<{ Querystring: { limit?: number } }>(
+    "/api/v1/generation-issues",
+    { schema: { querystring: generationIssuesQuerySchema } },
+    (request) => contextFor(request).service.generationIssues(request.query.limit),
   );
   app.get<{ Querystring: { status?: "active" | "shelved" } }>("/api/v1/creations", (request) => {
-    const items = options.service.readModel.listCreations(request.query.status);
+    const items = contextFor(request).readModel.listCreations(request.query.status);
     return { items, page: { nextCursor: null, total: items.length } };
   });
   app.get<{ Params: { creationId: string } }>(
     "/api/v1/creations/:creationId",
     { schema: { params: creationParamsSchema } },
-    async (request) => options.service.creation(request.params.creationId),
+    async (request) => contextFor(request).service.creation(request.params.creationId),
   );
   app.post<{ Body: { title: string; prompt: string } }>(
     "/api/v1/creations",
@@ -267,20 +348,21 @@ export async function createApp(
       },
     },
     async (request, reply) => {
-      const created = await options.archive.createCreation(request.body);
-      await options.service.readModel.rebuild();
+      const { archive, readModel } = contextFor(request);
+      const created = await archive.createCreation(request.body);
+      await readModel.rebuild();
       return reply.status(201).send({ data: created });
     },
   );
   app.get<{ Params: { generationId: string } }>(
     "/api/v1/generations/:generationId",
     { schema: { params: generationParamsSchema } },
-    (request) => options.service.generation(request.params.generationId),
+    (request) => contextFor(request).service.generation(request.params.generationId),
   );
   app.get<{ Params: { sha256: string } }>(
     "/api/v1/images/:sha256",
     { schema: { params: imageParamsSchema } },
-    (request) => options.service.image(request.params.sha256),
+    (request) => contextFor(request).service.image(request.params.sha256),
   );
   app.get<{ Params: { sha256: string }; Querystring: { variant?: "thumbnail" | "original" } }>(
     "/api/v1/images/:sha256/content",
@@ -295,9 +377,10 @@ export async function createApp(
       },
     },
     async (request, reply) => {
-      const path = options.service.readModel.contentPath(request.params.sha256);
+      const { readModel, thumbnails } = contextFor(request);
+      const path = readModel.contentPath(request.params.sha256);
       if (!path) throw new NotFoundError("Image Asset", request.params.sha256);
-      const image = options.service.readModel.getImage(request.params.sha256);
+      const image = readModel.getImage(request.params.sha256);
       if (!image) throw new NotFoundError("Image Asset", request.params.sha256);
       const contentPath =
         request.query.variant === "original"
@@ -314,18 +397,19 @@ export async function createApp(
     "/api/v1/curation/creations/:creationId",
     { schema: { params: creationParamsSchema, body: curationPatchSchema } },
     async (request) => {
+      const { archive, readModel } = contextFor(request);
       try {
-        await options.archive.updateCreationCuration(request.params.creationId, request.body);
+        await archive.updateCreationCuration(request.params.creationId, request.body);
       } catch (error) {
         if (!isErrorWithCode(error) || error.code !== "CURATION_CONFLICT") throw error;
-        await options.service.readModel.rebuild();
+        await readModel.rebuild();
         throw new AppError("CURATION_CONFLICT", error.message, 409, {
           ...error.details,
-          current: options.service.readModel.getCreation(request.params.creationId),
+          current: readModel.getCreation(request.params.creationId),
         });
       }
-      await options.service.readModel.rebuild();
-      const data = options.service.readModel.getCreation(request.params.creationId);
+      await readModel.rebuild();
+      const data = readModel.getCreation(request.params.creationId);
       if (!data) throw new NotFoundError("Creation", request.params.creationId);
       return { data };
     },
@@ -334,18 +418,19 @@ export async function createApp(
     "/api/v1/curation/images/:sha256",
     { schema: { params: imageParamsSchema, body: curationPatchSchema } },
     async (request) => {
+      const { archive, readModel } = contextFor(request);
       try {
-        await options.archive.updateImageCuration(request.params.sha256, request.body);
+        await archive.updateImageCuration(request.params.sha256, request.body);
       } catch (error) {
         if (!isErrorWithCode(error) || error.code !== "CURATION_CONFLICT") throw error;
-        await options.service.readModel.rebuild();
+        await readModel.rebuild();
         throw new AppError("CURATION_CONFLICT", error.message, 409, {
           ...error.details,
-          current: options.service.readModel.getImage(request.params.sha256),
+          current: readModel.getImage(request.params.sha256),
         });
       }
-      await options.service.readModel.rebuild();
-      const data = options.service.readModel.getImage(request.params.sha256);
+      await readModel.rebuild();
+      const data = readModel.getImage(request.params.sha256);
       if (!data) throw new NotFoundError("Image Asset", request.params.sha256);
       return { data };
     },
@@ -354,20 +439,22 @@ export async function createApp(
     "/api/v1/creations/:creationId/draft",
     { schema: { params: creationParamsSchema, body: draftPutSchema } },
     async (request) => {
+      const { archive, service } = contextFor(request);
       try {
-        await options.archive.updateDraft(request.params.creationId, request.body);
+        await archive.updateDraft(request.params.creationId, request.body);
       } catch (error) {
         if (!isErrorWithCode(error) || error.code !== "DRAFT_CONFLICT") throw error;
         throw new AppError("DRAFT_CONFLICT", error.message, 409, {
           ...error.details,
-          current: (await options.service.creation(request.params.creationId)).draft,
+          current: (await service.creation(request.params.creationId)).draft,
         });
       }
-      return { data: (await options.service.creation(request.params.creationId)).draft };
+      return { data: (await service.creation(request.params.creationId)).draft };
     },
   );
 
   app.post("/api/v1/imports", async (request, reply) => {
+    const { archive, readModel } = contextFor(request);
     const uploadDirectory = join(tmpdir(), "text-to-image-uploads");
     await mkdir(uploadDirectory, { recursive: true });
     const uploadPath = join(uploadDirectory, `${randomUUID()}.upload`);
@@ -379,15 +466,15 @@ export async function createApp(
       await pipeline(part.file, createWriteStream(uploadPath, { flags: "wx", mode: 0o600 }));
       if (part.file.truncated)
         throw new AppError("IMPORT_FILE_TOO_LARGE", "The image exceeds 25 MiB.", 413);
-      const imported = await options.archive.importImage(uploadPath);
-      await options.service.readModel.rebuild();
+      const imported = await archive.importImage(uploadPath);
+      await readModel.rebuild();
       return reply.status(201).send({ data: imported });
     } finally {
       await rm(uploadPath, { force: true });
     }
   });
 
-  app.get("/api/v1/recovery", async () => options.archive.listRecovery());
+  app.get("/api/v1/recovery", async (request) => contextFor(request).archive.listRecovery());
   app.post<{ Params: { transactionId: string; action: string }; Body: { dryRun?: boolean } }>(
     "/api/v1/recovery/:transactionId/:action",
     {
@@ -411,16 +498,17 @@ export async function createApp(
       },
     },
     async (request) => ({
-      data: await options.archive.recover(
+      data: await contextFor(request).archive.recover(
         request.params.transactionId,
         request.params.action,
         request.body.dryRun ?? true,
       ),
     }),
   );
-  app.post("/api/v1/index/rebuild", async () => {
-    await options.service.readModel.rebuild();
-    return { data: await options.service.readModel.status() };
+  app.post("/api/v1/index/rebuild", async (request) => {
+    const { readModel } = contextFor(request);
+    await readModel.rebuild();
+    return { data: await readModel.status() };
   });
 
   const webRoot = resolve(options.webRoot ?? join(process.cwd(), "apps", "web", "dist"));

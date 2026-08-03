@@ -2,7 +2,7 @@
 title: Product Requirements
 status: accepted
 owner: project
-last_updated: 2026-08-03
+last_updated: 2026-08-04
 related:
   - ../../CONTEXT.md
   - ../design/asset-library.md
@@ -55,7 +55,7 @@ related:
 
 ### UC-002: Prepare a Creation
 
-用户创建 Creation, 设置 Curation 标题与标签, 编辑 `prompt-draft.md`, 从 Inbox 导入外部图片, 并为本次生成选择 Reference Image 的 `roles` 与 `guidance`.
+用户创建 Creation, 设置 Curation 标题与标签, 编辑 `prompt-draft.md`, 从 Inbox、显式本地路径或 Codex 会话中的已物化 Session Image 导入外部图片, 并为本次生成选择 Reference Image 的 `roles` 与 `guidance`.
 
 ### UC-003: Generate an Image
 
@@ -121,6 +121,7 @@ related:
 - `FR-LIB-018`: 切换时必须拒绝新 Library 请求、排空旧请求、重新验证 candidate、持久化选择、原子替换 active context 并轮换 session token.
 - `FR-LIB-019`: 原路径恢复后必须由用户显式 Retry, 不得自动打开可能仍在复制的 Library.
 - `FR-LIB-020`: 初始化成功但后续切换失败时保留新 Library, 不自动删除; active context 与旧持久化选择保持不变.
+- `FR-LIB-021`: CLI 必须提供无写入的 Image source inspection, 返回 canonical source path、content identity、media type、尺寸与 byte length, 并区分 source missing、unreadable、unsupported 与 invalid.
 
 ### Prompt and Generation
 
@@ -136,6 +137,10 @@ related:
 - `FR-GEN-010`: Codex 可以自动执行常规 Prompt 优化, 核心意图变化必须二次确认.
 - `FR-GEN-011`: Safety Rejection 使用 stable error code 与可选 `moderation.stage`、`moderation.categories` 归档工具明确暴露的分类.
 - `FR-GEN-012`: Output-stage Safety Rejection 只表示生成结果被拒绝, 不构成 Prompt violation 判定.
+- `FR-GEN-013`: 明确生成请求授权 Skill 把具有可读本地 path 的 Session Image 通过独立 `import_asset` transaction 自动导入当前 canonical Library.
+- `FR-GEN-014`: 多张 Session Image 必须全部 inspection 成功后才开始导入; 任一 inspection 或 import 失败时不得创建 Generation transaction、调用图片工具或静默丢弃失败输入.
+- `FR-GEN-015`: Reference roles 只从用户明确措辞或已保存 selection 解析; 意图不足时必须在 prepare 前询问, 不得根据图片内容设置隐式默认 role.
+- `FR-GEN-016`: 只有 opaque session handle 且宿主无法提供原始 bytes 或可读本地 path 时, Skill 必须以 `SESSION_IMAGE_NOT_MATERIALIZED` fail closed, 不得通过未归档会话输入绕过 provenance.
 
 ### Transaction and Recovery
 

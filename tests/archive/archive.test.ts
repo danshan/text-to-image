@@ -1,5 +1,6 @@
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -28,6 +29,7 @@ import {
   importImageAsset,
   initLibrary,
   inspectImage,
+  inspectImageSource,
   listRecoveryTransactions,
   markInvocationStarted,
   mergeLibrary,
@@ -530,6 +532,49 @@ describe("domain and image invariants", () => {
   it("rejects an extension that conflicts with sniffed bytes", () => {
     expect(() => inspectImage(PNG_1X1, "image.jpg")).toThrowError(
       expect.objectContaining({ code: "IMAGE_INVALID" }),
+    );
+  });
+
+  it("inspects materialized Image sources without importing them", async () => {
+    const ownerRoot = makeTempRoot();
+    const source = join(ownerRoot, "session-image.png");
+    const unusedLibrary = join(ownerRoot, "unused-library");
+    writeFileSync(source, PNG_1X1);
+
+    expect(inspectImageSource(source)).toMatchObject({
+      sourcePath: realpathSync(source),
+      assetSha256: "18537dc5086d6545f6df54ef124fef79350bf70545a00fd08c48e5490655131a",
+      byteLength: PNG_1X1.byteLength,
+      mediaType: "image/png",
+      width: 1,
+      height: 1,
+    });
+    await expect(
+      runAssetctlInProcess([
+        "asset",
+        "inspect",
+        "--library",
+        unusedLibrary,
+        "--source",
+        source,
+        "--format",
+        "json",
+      ]),
+    ).resolves.toMatchObject({
+      exitCode: 0,
+      value: { sourcePath: realpathSync(source), mediaType: "image/png" },
+    });
+    expect(existsSync(unusedLibrary)).toBe(false);
+    const capabilities = await runAssetctlInProcess(["capabilities", "--format", "json"]);
+    expect(capabilities.exitCode).toBe(0);
+    const commands = (capabilities.value as { commands: string[] }).commands;
+    expect(commands).toContain("asset.inspect");
+    expect(commands).toContain("asset.import");
+    expect(() => inspectImageSource(join(ownerRoot, "missing.png"))).toThrowError(
+      expect.objectContaining({ code: "IMAGE_SOURCE_MISSING" }),
+    );
+    expect(() => inspectImageSource(ownerRoot)).toThrowError(
+      expect.objectContaining({ code: "IMAGE_SOURCE_UNREADABLE" }),
     );
   });
 });

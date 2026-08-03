@@ -14,6 +14,7 @@ import {
   failGeneration,
   findGitRoot,
   importImageAsset,
+  inspectImageSource,
   initLibrary,
   inspectRecoveryTransaction,
   listRecoveryTransactions,
@@ -66,6 +67,7 @@ export async function run(argv: string[]): Promise<CliResult> {
         "draft.show",
         "draft.update",
         "asset.import",
+        "asset.inspect",
         "revision.checkpoint",
         "generation.prepare",
         "generation.mark-invocation-started",
@@ -193,6 +195,9 @@ export async function run(argv: string[]): Promise<CliResult> {
   }
   if (command === "asset" && subcommand === "import") {
     return success(importImageAsset(resolved.libraryRoot, stringOption(parsed, "source")));
+  }
+  if (command === "asset" && subcommand === "inspect") {
+    return success(inspectImageSource(stringOption(parsed, "source")));
   }
   if (command === "revision" && subcommand === "checkpoint") {
     const request = readStdinJson<{

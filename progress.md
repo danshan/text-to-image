@@ -200,6 +200,44 @@
   - Final `npm run docs:check`: 32 Markdown files and 11 ADRs passed.
   - Final `npm run format:check` 与 `git diff --check`: passed.
 
+### Phase 11: Session Image Reference Ingress
+
+- **Status:** completed
+- **Started:** 2026-08-04
+- **Completed:** 2026-08-04
+- 已完成:
+  - 使用 `$grill-with-docs`、`grilling` 与 `domain-modeling` 逐项确认 Session Image ingress contract.
+  - 在 `CONTEXT.md` 新增 `Session Image`, 明确它与 Image Asset、Reference Image 的边界.
+  - 确认自动导入使用独立 `import_asset` transaction, Reference roles 不使用默认值, 多图输入在 Generation boundary fail closed.
+  - 核对当前 Codex 能力: opaque session handle 可以被图片工具消费, 但当前没有通用原始 bytes 导出接口.
+  - 将产品需求、Asset Library、Generation Workflow、开发指南与测试策略切回 `draft`.
+- 错误:
+  - 初次 source inspection 阅读命令引用了不存在的 `packages/archive/src/errors.ts`; `ArchiveError` 实际位于 `packages/domain/src/index.ts`, 后续检查改用真实路径.
+  - Standalone Archive 与 CLI typecheck 读取了尚未重建的 referenced declarations; 改用 root build 后执行 root typecheck.
+  - 默认 Vitest 配置排除了 `tests/archive/archive.test.ts`; 后续使用仓库 `test:integration` contract.
+  - 新增 Image source inspection test 使用了错误的 fixture SHA-256; 已按实际 fixture bytes 修正期望值.
+  - 组合文档补丁使用了过期的 Testing Strategy 英文条目; 已拆分并按当前中文章节更新.
+  - Lint 拒绝在 unknown CLI payload assertion 中嵌套 `any` matcher; 已显式收窄 payload 并逐项断言 command membership.
+  - 直接执行 CLI dist 无法解析 workspace source `.js` import; 该入口不属于当前 root command contract, smoke 改用 `npm run assetctl -- ...`.
+  - Fixture validation 在 sandbox 内无法创建 `tsx` IPC socket; 按既有 root command contract 在 sandbox 外复验.
+- 待完成:
+  - 无.
+- 实现:
+  - 在 Archive 新增无写入 `inspectImageSource`, 返回 canonical source path、SHA-256、byte length、media type 与尺寸.
+  - 新增 `IMAGE_SOURCE_MISSING` 与 `IMAGE_SOURCE_UNREADABLE`, 并保留 `IMAGE_UNSUPPORTED` 与 `IMAGE_INVALID` 的 payload 语义.
+  - CLI capabilities 与 command surface 新增 `asset.inspect`; `asset import` 复用同一 source reader, 避免 inspection 与 import 产生两套解析逻辑.
+  - Generation Skill 固定一次 resolver 结果, 对全部 Session Image 先 inspection、再独立 import, 校验 hash 后才 prepare Generation.
+  - Prompt policy 明确从用户措辞解析 roles, 无明确语义时询问且不设置默认值.
+  - 新增 Session Image eval、Skill contract test 与 Archive/CLI integration coverage.
+  - 本次真实 source path 只读 smoke 成功: JPEG `1080x1080`, SHA-256 `35ebe9964144d179861de28cb797dff07f54d7fb56f87af41511cd9ebd2e9574`, byte length `116052`.
+- 验证:
+  - `npm test`: Server 2 files / 9 tests, Hook and Skill 29 tests, Web 10 files / 23 tests passed.
+  - `npm run test:integration`: 4 files / 34 tests passed.
+  - `npm run build`, `npm run typecheck`, `npm run lint` 与 `npm run format:check`: passed.
+  - `npm run docs:check`: 32 Markdown files and 11 ADRs passed.
+  - `npm run fixtures:validate`: 2 of 2 fixtures matched outside the sandbox.
+  - `git diff --check`: passed.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |
@@ -208,8 +246,8 @@
 | Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                                      | pass   |
 | Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 53-module Web build passed                  | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 28 Hook/Skill tests and 16 Web tests passed                                                    | pass   |
-| Integration                         | Archive、read model and HTTP security pass                                          | 4 files, 31 tests passed                                                                       | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 29 Hook/Skill tests and 23 Web tests passed                                                    | pass   |
+| Integration                         | Archive、read model and HTTP security pass                                          | 4 files, 34 tests passed                                                                       | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
 | Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
 | Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                                      | pass   |
@@ -250,10 +288,10 @@
 
 ## 5-Question Reboot Check
 
-| Question             | Answer                                                                                                   |
-| -------------------- | -------------------------------------------------------------------------------------------------------- |
-| Where am I?          | Phase 8 and Phase 9 completed                                                                            |
-| Where am I going?    | Hand off the completed contract, UI review and validation results                                        |
-| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                            |
-| What have I learned? | See `findings.md`                                                                                        |
-| What have I done?    | Added Generation Issue UX, Draft preservation, desktop UI review, and Phase 9 runtime Library management |
+| Question             | Answer                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| Where am I?          | Phase 11 completed                                                                                        |
+| Where am I going?    | Hand off the completed Session Image ingress contract and implementation                                  |
+| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                             |
+| What have I learned? | See `findings.md`                                                                                         |
+| What have I done?    | Added Session Image source inspection, automatic import workflow, stable errors, tests, and documentation |

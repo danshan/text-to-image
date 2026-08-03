@@ -21,6 +21,8 @@ test("workflow preserves the required generation transaction order", () => {
   const orderedMarkers = [
     "capabilities --format json",
     "library resolve --format json",
+    "asset inspect",
+    "asset import",
     "generation prepare",
     "generation mark-invocation-started",
     "image_gen.imagegen",
@@ -45,6 +47,16 @@ test("skill forbids unarchived and automatically retried generation", () => {
   assert.match(skill, /Commit Marker/);
 });
 
+test("skill materializes and imports Session Images before generation", () => {
+  assert.match(skill, /SESSION_IMAGE_NOT_MATERIALIZED/);
+  assert.match(skill, /IMAGE_SOURCE_MISSING/);
+  assert.match(skill, /IMAGE_SOURCE_UNREADABLE/);
+  assert.match(skill, /全部 inspection 成功后/);
+  assert.match(skill, /比较 import 与 inspection 返回的 `assetSha256`/);
+  assert.match(skill, /不设置默认 role/);
+  assert.match(skill, /固定 resolver 返回的 `libraryRoot`/);
+});
+
 test("all referenced guidance files exist and describe their hard boundary", () => {
   const references = {
     "cli-contract.md": ["--request-stdin", "--result-stdin", "--error-stdin"],
@@ -65,7 +77,7 @@ test("skill evals cover variants, references, and conservative recovery", () => 
   assert.equal(evals.skill_name, "generate-and-archive");
   assert.deepEqual(
     evals.evals.map((entry) => entry.id),
-    [1, 2, 3],
+    [1, 2, 3, 4],
   );
   for (const entry of evals.evals) {
     assert.ok(entry.prompt.includes("$generate-and-archive"));

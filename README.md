@@ -2,7 +2,7 @@
 
 这是一个以本地文件夹为事实来源的图片生成与图库管理项目. Codex 负责按照仓库内 Skill 调用图片生成能力并归档完整 provenance, Web UI 负责展示和整理 Creation、提示词历史、参考图与生成产物.
 
-MVP 已完成. 它提供 versioned Asset Library Schema、`assetctl`、原子 Generation 归档、恢复流程、可重建 SQLite read model、本地 Web UI, 以及只作用于本仓库的 Codex Skill 与 Hook. 运行时 Library 整体不进入 Git, clone 后通过已跟踪的 Schema、fixtures、CLI 和文档获得完整格式契约.
+MVP 已完成. 它提供 versioned Asset Library Schema、`assetctl`、原子 Generation 归档、Session Image 自动导入、恢复流程、可重建 SQLite read model、本地 Web UI, 以及只作用于本仓库的 Codex Skill 与 Hook. 运行时 Library 整体不进入 Git, clone 后通过已跟踪的 Schema、fixtures、CLI 和文档获得完整格式契约.
 
 ## Quick Start
 

@@ -2,7 +2,7 @@
 title: Generation Workflow Design
 status: accepted
 owner: project
-last_updated: 2026-08-03
+last_updated: 2026-08-04
 related:
   - ../../CONTEXT.md
   - asset-library.md
@@ -66,8 +66,9 @@ Skill 接受:
 - Reference Image selections, 每项包含 `assetSha256`, `roles`, 可选 `guidance`.
 - 可选 `basedOnRevisionId`, 未提供时使用 Draft metadata.
 - 可选 variant count, 默认 `1`; Skill 逐次调用而不是把多个调用合并为一个 Generation.
+- 可选 Session Image source, 由 Codex 会话提供; 必须具有宿主暴露的原始 bytes 或可读本地 path.
 
-Skill 必须从 canonical Library root 读取 Prompt Draft 和资产, 不接受未经导入的任意本地文件作为 Reference Image. 用户先通过 Inbox import 建立 Image Asset 身份.
+Skill 必须从 canonical Library root 读取 Prompt Draft 和资产. 用户明确请求生成时, Skill 可以把已物化 Session Image 自动导入为 Image Asset; Generation 仍然不接受未经导入的任意本地文件作为 Reference Image.
 
 ## Prompt Policy
 
@@ -142,13 +143,23 @@ any non-committed state
 
 ### 1. Resolve and Validate
 
-1. 按统一优先级解析 Library root.
+1. 按统一优先级解析 Library root, 并在本次工作流中固定返回的 canonical path.
 2. 运行 quick validation, 检查 format version、lock 和目标 Creation.
 3. 列出未恢复 staging transactions; 存在异常不阻断无关 Generation, 但必须向用户显示 warning.
-4. 读取 Prompt Draft、Draft metadata、selected Image Asset 和 Curation display data.
-5. 对每个 Reference Image 验证已提交身份、payload hash 和 roles.
+4. 读取 Prompt Draft、Draft metadata、selected Image Asset、Session Image source 和 Curation display data.
+5. 对已有 Reference Image 验证已提交身份与 payload hash; 对全部输入验证 roles 已从用户明确措辞或已保存 selection 得出.
 
-### 2. Build Effective Prompt
+### 2. Ingress Session Images
+
+1. 按用户提供或会话出现顺序稳定编号 Session Image. 只有 opaque handle 且宿主无法暴露原始 bytes 或本地 path 时, 以 `SESSION_IMAGE_NOT_MATERIALIZED` 停止.
+2. 对全部 source 调用只读 `asset inspect`. 任一 source missing、unreadable、unsupported 或 invalid 时, 不导入任何图片, 不创建 Generation transaction.
+3. sandbox permission denial 先请求 scoped read access 并有限重试一次, 不得误报为 source missing.
+4. 全部 inspection 成功后, 逐个调用 `asset import`. 每次 import 创建独立 transaction, 已提交 Image Asset 不因后续失败回滚.
+5. import 返回的 `assetSha256` 必须与 inspection 相同; 不同表示 source 并发变化, 停止 Generation.
+6. 任一 import 失败时不静默删除该输入或使用其余图片继续. 重试依靠内容寻址复用已提交资产.
+7. 使用全部 import 结果构造 Reference relations, 然后进入 effective Prompt 构造.
+
+### 3. Build Effective Prompt
 
 1. 读取用户 Change Instruction.
 2. 根据 parent Revision 和 Draft 构造 effective prompt.
@@ -156,7 +167,7 @@ any non-committed state
 4. 检查 material change; 必要时等待用户确认.
 5. 计算 prompt SHA-256, 分配 transaction、Revision 和 Generation ID.
 
-### 3. Prepare Transaction
+### 4. Prepare Transaction
 
 Skill 调用:
 
@@ -182,7 +193,7 @@ assetctl generation prepare \
 
 CLI 从 stdin 读取一个完整 JSON request, 避免 Prompt 出现在 argv、process list 或 shell history. JSON stdout 是 Skill 与 writer 的接口. human diagnostics 写入 stderr, 不得混入 stdout.
 
-### 4. Mark Invocation
+### 5. Mark Invocation
 
 在调用 built-in tool 之前执行:
 
@@ -194,13 +205,13 @@ assetctl generation mark-invocation-started \
 
 此操作完成后如果 Codex 消失, outcome 必须视为 unknown. 该保守选择可能记录一次实际上尚未开始的 interrupted Generation, 但不会错误重试一个可能已经执行的调用.
 
-### 5. Invoke Built-in Image Generation
+### 6. Invoke Built-in Image Generation
 
 Skill 使用 built-in `image_gen` tool. Reference Image 都是已知本地 path, 按工具要求作为 referenced images 提供. 不传入不存在的 destination-path 参数.
 
 系统 Skill 会把结果默认保存到 `$CODEX_HOME/generated_images/...`. 项目 Skill 必须取得返回的本地 output path. 如果 tool 成功但没有可解析本地 path, transaction 保持可恢复状态并报告错误, 不伪造 Output.
 
-### 6. Capture and Inspect
+### 7. Capture and Inspect
 
 每个 output 调用:
 
@@ -215,7 +226,7 @@ capture 复制 bytes 到 transaction staging, sniff media type, 解码尺寸并�
 
 Codex 使用 `view_image` 检查 staged output 的主体、风格、构图、文字和明确约束. 质量不满意不改变 tool execution status; Output 仍提交, 用户可随后隐藏或评分.
 
-### 7. Finalize Result
+### 8. Finalize Result
 
 Tool success:
 
@@ -239,7 +250,7 @@ result 和 error JSON 均从 stdin 读取. error record 只保存 stable code、
 
 图片工具明确返回 safety moderation rejection 时, Skill 使用 `IMAGE_GENERATION_SAFETY_REJECTED`. 若工具暴露 moderation stage 与 categories, error request 增加 optional `moderation`; 未暴露 stage 时使用 `unknown`, 未暴露 categories 时使用空数组. Request ID 与完整 provider payload 不进入 Archive. Safety Rejection 是 known failure, 不自动 retry; output-stage rejection 不得表述成 Prompt violation.
 
-### 8. Commit
+### 9. Commit
 
 ```bash
 assetctl generation commit \
@@ -249,13 +260,13 @@ assetctl generation commit \
 
 writer 按 Asset Library 逻辑提交协议发布 Commit Marker. Skill 不直接移动最终 objects.
 
-### 9. Refresh Draft Metadata and Index
+### 10. Refresh Draft Metadata and Index
 
 Commit 后, 如果当前 Draft hash 仍等于 prepare 时的 `draftContentSha256`, writer 保留 Draft 的原始正文和语言, 仅把 `basedOnRevisionId` 更新为新 Revision. Generation 成功、失败或中断都不得把 effective Prompt 写回 Draft. 如果用户在生成期间修改 Draft, 不覆盖用户内容, 也不更新其 based-on metadata, 只报告 concurrent edit.
 
 indexer 异步消费 Commit Marker. 索引失败记录 warning, 不回滚 Generation.
 
-### 10. Report
+### 11. Report
 
 Skill 最终报告:
 

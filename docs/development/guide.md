@@ -2,7 +2,7 @@
 title: Development Guide
 status: accepted
 owner: project
-last_updated: 2026-08-03
+last_updated: 2026-08-04
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -148,6 +148,8 @@ npm run assetctl -- init --library ./library
 npm run assetctl -- library select --library /path/to/existing-library
 npm run assetctl -- library merge --source /path/to/source-library --dry-run
 npm run assetctl -- library merge --source /path/to/source-library
+npm run assetctl -- asset inspect --library ./library --source /path/to/reference.jpg --format json
+npm run assetctl -- asset import --library ./library --source /path/to/reference.jpg --format json
 npm run assetctl -- validate --library ./library
 npm run assetctl -- capabilities --format json
 npm run assetctl -- index rebuild --library ./library
@@ -197,6 +199,10 @@ Ignored `text-to-image.local.json` 可以保存仓库外路径:
 ```
 
 CLI `--library` 优先级最高. 相对路径按 Git root 解析. 配置 parser 与 path resolver 位于 shared package, CLI、server、Skill helper 与 Hook 不得独立实现 precedence.
+
+Generation Skill 在一次工作流开始时保存 resolver 返回的 canonical Library root, 后续 inspection、import、prepare、capture、commit 与 recovery 命令全部显式使用同一路径. 不得在中途重新解析 Library 或复用前一会话的旧 path.
+
+`asset inspect` 是 Session Image ingress 的只读 preflight. 它不要求 source 位于 Library 内, 不修改 source, 也不创建 Archive transaction. `asset import` 必须在全部 source inspection 成功后执行, 并重新读取 source 以防 inspection 与 import 之间发生变化.
 
 成功执行 CLI `init --library`、`library select --library` 或 Web Library transition 后, shared resolver 把 canonical absolute path 原子写入 Git root 的 `text-to-image.local.json`. 写入失败或 Library validation 失败时保留原配置. Web transition 会在 candidate ready 后排空旧请求、切换 runtime context 并轮换 session token, 无需重启 Server.
 

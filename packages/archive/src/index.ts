@@ -1,6 +1,7 @@
 export * from "@text-to-image/domain";
 export * from "./generation.js";
 export * from "./image.js";
+export * from "./image-source.js";
 export * from "./merge.js";
 export * from "./recovery.js";
 export * from "./resolver.js";

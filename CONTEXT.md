@@ -24,6 +24,10 @@ _Avoid_: Prompt, revision
 Asset Library 级别的不可变图片, 由内容标识. 同一 Image Asset 可以是某个 Generation 的输出, 也可以作为多个 Creation 中 Generation 的参考输入.
 _Avoid_: Image file, attachment
 
+**Session Image**:
+当前 Codex 会话提供的图片输入. 它只有在原始 bytes 已物化并导入当前 Asset Library 后, 才能成为 Image Asset 并用于可归档的 Generation.
+_Avoid_: Attachment, Reference Image
+
 **Reference Image**:
 Image Asset 在作为 Generation 视觉输入时承担的关系角色. 它不是独立的资产类型, 用途由关系上的 `roles` 与可选 `guidance` 表达.
 _Avoid_: Reference asset, copied input

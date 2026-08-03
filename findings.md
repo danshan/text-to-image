@@ -49,6 +49,13 @@
 - Safety Rejection 使用 `IMAGE_GENERATION_SAFETY_REJECTED` 和 optional `moderation.stage | categories`; output-stage rejection 不构成 Prompt violation 判定.
 - Safety guidance 只使用 category-level 建议, 不推断或高亮具体触发词; 恢复路径为 Review Prompt、编辑 Draft、显式创建新 Generation.
 - 当前 development Library 没有历史兼容负担. Safety Rejection contract 直接更新 format `1`, 不实现 migration、旧 reader compatibility 或 ADR; 必要时整体重新初始化 runtime Library.
+- 会话中插入的图片使用 `Session Image` 描述; 它不是 Reference Image, 必须先物化原始 bytes 并导入当前 Asset Library.
+- 明确生成请求授权 Skill 自动执行独立 `import_asset` 事务. 导入成功而后续生成失败时保留已提交 Image Asset.
+- Reference roles 只根据用户明确措辞解析; 语义不足时询问, 不从图片内容猜测或设置隐式默认值.
+- 多张 Session Image 使用 all-or-nothing Generation input: 全部预检成功后才导入, 任一失败时不准备 Generation 或调用图片工具.
+- 只有 opaque session handle 且宿主无法提供原始 bytes 或本地路径时 fail closed; `image_gen` 能消费会话上下文不等于 Archive 能取得可持久化输入.
+- 本次实际 Session Image path 可读取, source inspection 识别为 JPEG `1080x1080`, SHA-256 为 `35ebe9964144d179861de28cb797dff07f54d7fb56f87af41511cd9ebd2e9574`; 原错误属于会话 ingress 误分类, 不是 source missing.
+- `asset inspect` 可以在目标 Library 尚不存在时保持无副作用, 因为它只解析和检查 source; Library validation 仍由 Generation Skill 的固定 preflight root 负责.
 - Settings 显示 resolved absolute Library path 并允许输入目标路径; Server 不提供通用 filesystem directory listing 或文件读取 endpoint.
 - Web initialize、select 与 Retry 使用 single async transition; candidate full validation 与 Index rebuild 位于切换临界区外, transition 提供 monotonic stage/count progress.
 - Transition commit 排空旧 Library 请求, 原子持久化 canonical path, 替换唯一 active context 并轮换 session token; 其他 tab 必须重新 bootstrap.

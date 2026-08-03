@@ -2,7 +2,7 @@
 title: Asset Library Design
 status: accepted
 owner: project
-last_updated: 2026-08-03
+last_updated: 2026-08-04
 related:
   - ../../CONTEXT.md
   - ../adr/0001-use-the-filesystem-as-the-source-of-truth.md
@@ -378,12 +378,13 @@ Image Curation:
 
 ### Import an Image
 
-1. 从 Inbox 或显式 source path 读取 bytes, 不信任 extension.
-2. sniff media type, 验证解码、尺寸与 MVP allowlist.
-3. 计算 SHA-256 和 canonical destination.
-4. 在 staging 中准备 payload 与 `import_asset` Marker.
-5. 在全局锁内 install-if-absent, 最后发布 Marker.
-6. source file 默认保留; 用户显式要求后才可移出 Inbox.
+1. 对 Inbox、显式 source path 或已物化 Session Image 先 canonicalize source path, 验证它是可读 regular file.
+2. sniff media type, 验证解码、尺寸与 MVP allowlist, 计算 SHA-256 和 byte length. `asset inspect` 在此结束, 不创建 Library directory、staging、lock 或 Commit Marker.
+3. `IMAGE_SOURCE_MISSING` 只表示 path 不存在, `IMAGE_SOURCE_UNREADABLE` 表示权限或文件类型不可读; 两者不得互相替代. Payload 类型和内容问题继续使用 `IMAGE_UNSUPPORTED` 与 `IMAGE_INVALID`.
+4. import 重新读取并检查 source, 计算 canonical destination. Inspection 与 import 之间的 source 变化由调用方比较两次 `assetSha256` 检测.
+5. 在 staging 中准备 payload 与独立 `import_asset` Marker.
+6. 在全局锁内 install-if-absent, 最后发布 Marker.
+7. source file 默认保留; 用户显式要求后才可移出 Inbox. 后续 Generation 失败不回滚已提交 Image Asset.
 
 ### Merge a Library
 

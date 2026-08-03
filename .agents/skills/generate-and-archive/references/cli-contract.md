@@ -65,6 +65,36 @@ stdout response:
 
 `referencePaths` 的顺序必须与 request `references` 一致.
 
+## Session Image Ingress
+
+Session Image 具有可读本地 path 时, 先对全部 source 执行只读 inspection:
+
+```bash
+npm run assetctl -- asset inspect --library <library-root> --source <source-path> --format json
+```
+
+成功 stdout:
+
+```json
+{
+  "sourcePath": "/canonical/source/reference.jpg",
+  "assetSha256": "92b7b13cbeef65f8a258d705e19916a5917865543398eff786c749678a2d820a",
+  "byteLength": 145280,
+  "mediaType": "image/jpeg",
+  "extension": "jpg",
+  "width": 1536,
+  "height": 1024
+}
+```
+
+只有全部 inspection 成功且 Reference roles 已明确时才开始导入:
+
+```bash
+npm run assetctl -- asset import --library <library-root> --source <canonical-source-path> --format json
+```
+
+每次 import 是独立 committed transaction. Skill 必须比较 inspection 与 import 的 `assetSha256`; 不一致时停止 Generation. `IMAGE_SOURCE_MISSING` 表示 path 不存在, `IMAGE_SOURCE_UNREADABLE` 表示权限或文件类型无法读取, `IMAGE_UNSUPPORTED` 表示明确不支持的图片类型, `IMAGE_INVALID` 表示 payload 无效. opaque session handle 不进入 CLI, 由 Skill 报告 `SESSION_IMAGE_NOT_MATERIALIZED`.
+
 ## Complete
 
 Command:

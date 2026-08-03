@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 10
+Phase 11
 
 ## Phases
 
@@ -107,9 +107,27 @@ Phase 10
 - [x] 执行 focused、root 与 documentation verification, 记录结果并恢复文档为 `accepted`.
 - **Status:** completed
 
+### Phase 11: Session Image Reference Ingress
+
+- [x] 通过 `$grill-with-docs` 确认 Session Image、自动导入、Reference roles 与部分失败边界.
+- [x] 在 `CONTEXT.md` 定义 Session Image, 并把受影响正式文档切回 `draft`.
+- [x] 实现只读 Image source inspection 与稳定错误分类.
+- [x] 更新 Generation Skill, 自动导入已物化 Session Image 并固定 Library root.
+- [x] 补充 Archive、CLI、Skill contract 与文档测试.
+- [x] 执行 root verification, 更新执行记录并恢复正式文档为 `accepted`.
+- **Status:** completed
+
+#### Confirmed Contract
+
+1. Session Image 只有在原始 bytes 已物化并导入当前 Asset Library 后, 才能成为 Reference Image.
+2. 明确生成请求授权独立 `import_asset` 事务; 后续生成失败不回滚已提交 Image Asset.
+3. Reference roles 仅从用户明确措辞解析; 语义不足时在 prepare 前询问, 不设置默认 role.
+4. 多张 Session Image 先全部预检; 任一失败时不创建 Generation transaction, 不调用图片工具, 不静默丢弃输入.
+5. opaque session handle 在宿主没有提供原始 bytes 或路径时 fail closed, 并报告 `SESSION_IMAGE_NOT_MATERIALIZED`.
+
 ## Remaining Design Questions
 
-无. Phase 10 按已确认的 trusted LAN contract 实现.
+无. Phase 11 按已确认的 Session Image ingress contract 实现.
 
 ## Errors Encountered
 
@@ -134,3 +152,11 @@ Phase 10
 | Standalone Server typecheck read stale referenced package declarations         |       1 | Use root build/typecheck contract after fixing the new test type |
 | Initial host smoke failed because sandbox denied the `tsx` IPC socket          |       1 | Re-ran the isolated temp-root smoke outside the sandbox          |
 | Format check found the listener test changed after its earlier Prettier pass   |       1 | Re-format the exact test file before final verification          |
+| Initial source inspection read referenced a non-existent `errors.ts` file      |       1 | Located `ArchiveError` in `packages/domain/src/index.ts`         |
+| Standalone Archive and CLI typecheck read stale referenced declarations        |       1 | Use root build before the root typecheck contract                |
+| Default Vitest config excluded the Archive integration test                    |       1 | Use the repository `test:integration` runner                     |
+| New Image source inspection test used an incorrect fixture SHA-256             |       1 | Replaced it with the digest reported for the tracked fixture     |
+| Combined documentation patch used stale Testing Strategy wording               |       1 | Split the patch and matched the current Chinese test sections    |
+| Lint rejected an `any` matcher nested inside an unknown CLI payload assertion  |       1 | Narrowed the payload explicitly and asserted command membership  |
+| Direct execution of CLI dist could not resolve workspace source `.js` imports  |       1 | Use the documented root `npm run assetctl -- ...` contract       |
+| Fixture validation could not create the `tsx` IPC socket in the sandbox        |       1 | Re-run the root fixture contract outside the sandbox             |

@@ -10,7 +10,7 @@ import {
   type PromptDraftMetadata,
   type PromptRevisionRecord,
 } from "@text-to-image/domain";
-import { inspectImage } from "./image.js";
+import { readImageSource } from "./image-source.js";
 import {
   defaultRuntimeAdapters,
   isDirectoryEmpty,
@@ -296,9 +296,8 @@ export function importImageAsset(
   options: TransactionOptions = {},
 ): ImportAssetResult {
   assertLibraryValid(libraryRoot, "quick");
-  const sourceBytes = readFileSync(sourcePath);
-  const inspection = inspectImage(sourceBytes, sourcePath);
-  const assetSha256 = sha256Bytes(sourceBytes);
+  const { bytes: sourceBytes, inspection } = readImageSource(sourcePath);
+  const { assetSha256 } = inspection;
   const relativePath = `assets/sha256/${assetSha256.slice(0, 2)}/${assetSha256}.${inspection.extension}`;
   const owners = readCommittedPathIndex(libraryRoot);
   const owner = owners.get(relativePath);
@@ -313,7 +312,9 @@ export function importImageAsset(
     }
     return {
       assetSha256,
-      ...inspection,
+      mediaType: inspection.mediaType,
+      width: inspection.width,
+      height: inspection.height,
       relativePath,
       transactionId: null,
       reused: true,
@@ -326,7 +327,9 @@ export function importImageAsset(
   const marker = commitTransaction(libraryRoot, transaction.id, options);
   return {
     assetSha256,
-    ...inspection,
+    mediaType: inspection.mediaType,
+    width: inspection.width,
+    height: inspection.height,
     relativePath,
     transactionId: marker.id === transaction.id ? transaction.id : null,
     reused: marker.id !== transaction.id,

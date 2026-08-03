@@ -36,6 +36,19 @@
         "The recovery records interrupted with outcomeKnown false and preserves transaction evidence.",
         "The final report explains why the outcome is unknown."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Use $generate-and-archive for Creation f69e912d-c504-4278-89d5-4558ba452df0. Use the two images attached in this session as subject and palette references, then generate one image.",
+      "expected_output": "Both materialized Session Images are inspected before either is imported, imported through the fixed canonical Library, and converted into committed Reference Image relations before generation.",
+      "files": [],
+      "expectations": [
+        "The agent fixes one canonical Library root for the entire workflow.",
+        "The agent inspects every materialized Session Image before importing any of them.",
+        "The agent stops without preparing or invoking generation if any Session Image is missing, unreadable, unsupported, invalid, or not materialized.",
+        "The agent imports each validated source with assetctl, verifies the returned hash, and uses the resulting committed asset identity in generation prepare.",
+        "The agent preserves explicit subject and palette roles without guessing roles from image content."
+      ]
     }
   ]
 }

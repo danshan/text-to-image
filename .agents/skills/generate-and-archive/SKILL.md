@@ -31,9 +31,33 @@ compatibility: Requires the repository assetctl npm script, built-in image_gen t
 2. 运行 `npm run assetctl -- capabilities --format json`, 要求 Library format `1` 与 Generation Workflow `1`.
 3. 运行 `npm run assetctl -- library resolve --format json`, 只使用返回的 canonical `libraryRoot`.
 4. 运行 `npm run assetctl -- recover list --library <library-root> --format json`. 向用户报告未恢复 transaction, 但不自动处理或阻断无关 Creation.
-5. 验证 `creationId`, Prompt Draft, 可选 parent Revision 和 Reference Image 关系. Reference 必须是已提交 Image Asset, 不能直接使用任意本地图片.
+5. 在本次工作流中固定 resolver 返回的 `libraryRoot`; 后续命令不得重新解析、切换或使用会话中的旧 Library path.
+6. 验证 `creationId`, Prompt Draft、可选 parent Revision 与 Reference roles. 已提交 Image Asset 可以直接作为 Reference; Session Image 必须先按下一节完成 ingress.
 
-### 2. Freeze Effective Inputs
+### 2. Import Materialized Session Images
+
+会话中 attach、paste 或 drag 的图片称为 Session Image. 它不是 Reference Image; 只有原始 bytes 已物化为可读取本地文件并导入当前 Library 后, 才能参与 Generation.
+
+1. 按用户提供或会话出现顺序稳定编号 Session Image. 根据用户明确措辞解析 `roles` 与可选 `guidance`; 不能只根据图片内容猜测 role. 意图不足时先询问, 不设置默认 role.
+2. 如果 Session Image 只有 opaque session handle, 且宿主没有暴露原始 bytes 或可读取本地 path, 以 `SESSION_IMAGE_NOT_MATERIALIZED` 停止. 不调用 `image_gen`, 不创建 Generation transaction, 不要求用户重复保存一个其实已经具有可读路径的文件.
+3. 对全部 materialized Session Image 先执行只读 inspection, 此阶段不导入任何图片:
+
+```bash
+npm run assetctl -- asset inspect --library <library-root> --source <session-image-path> --format json
+```
+
+4. 任一 inspection 失败时整体停止, 不忽略失败图片后继续. 区分 `IMAGE_SOURCE_MISSING`, `IMAGE_SOURCE_UNREADABLE`, `IMAGE_UNSUPPORTED` 与 `IMAGE_INVALID`; sandbox permission denial 不能误报为 missing, 应请求目标文件的 scoped read access 后有限重试一次.
+5. 全部 inspection 成功后, 按相同顺序逐个导入:
+
+```bash
+npm run assetctl -- asset import --library <library-root> --source <canonical-source-path> --format json
+```
+
+6. 比较 import 与 inspection 返回的 `assetSha256`. 不一致表示 source 在两步之间发生变化; 以 `SESSION_IMAGE_CHANGED` 停止, 不创建 Generation transaction. 已经提交的独立 `import_asset` transaction 保留, 不删除或回滚.
+7. 使用 import 返回的 `assetSha256` 构造 Reference relation. 内容寻址复用不是错误; `reused: true` 与新导入都可以继续.
+8. 任一 import 失败时整体停止 Generation. 已提交 Image Asset 保留; 重试依靠内容寻址去重.
+
+### 3. Freeze Effective Inputs
 
 1. 读取 Creation 的 `prompt-draft.md` 与 `prompt-draft.json`.
 2. 根据 Draft, `changeInstruction` 和 Reference guidance 构造完整 effective prompt.
@@ -41,7 +65,7 @@ compatibility: Requires the repository assetctl npm script, built-in image_gen t
 4. 保留 `changeInstruction` 与 effective prompt 的区别. 后者是实际发送给图片生成工具并归档的 Prompt Revision.
 5. 对每个 Reference 验证 `roles` 非空且去重. `other` 必须具有明确 `guidance`.
 
-### 3. Prepare Through Stdin
+### 4. Prepare Through Stdin
 
 按 [CLI contract](references/cli-contract.md) 构造 prepare request. 启动下面的命令, 再通过该进程 stdin 发送一个 JSON value 和 EOF. Prompt 或 tool result 不得放入 argv, shell pipeline, temporary shell script 或 shell history.
 
@@ -51,7 +75,7 @@ npm run assetctl -- generation prepare --library <library-root> --creation <crea
 
 保存 stdout 返回的 `transactionId`, `revisionId`, `generationId` 和 `referencePaths`. stdout 必须是单个 JSON value; diagnostic 只从 stderr 读取.
 
-### 4. Mark Before Invocation
+### 5. Mark Before Invocation
 
 在调用图片工具前运行:
 
@@ -61,7 +85,7 @@ npm run assetctl -- generation mark-invocation-started --library <library-root> 
 
 从这一刻起, 不确定结果必须保守归类为 `interrupted`; 不得自动重试.
 
-### 5. Invoke Built-in Image Generation
+### 6. Invoke Built-in Image Generation
 
 直接调用 built-in `image_gen.imagegen`:
 
@@ -71,7 +95,7 @@ npm run assetctl -- generation mark-invocation-started --library <library-root> 
 
 一次调用只对应当前 `generationId`. 如果用户要求多个 variant, 当前事务完成或留下明确 recovery 状态后, 再创建下一事务.
 
-### 6. Capture and Inspect
+### 7. Capture and Inspect
 
 对 tool 返回的每个本地 output path 分别运行:
 
@@ -83,7 +107,7 @@ npm run assetctl -- generation capture --library <library-root> --transaction <t
 
 如果 tool 成功但没有可解析的本地 path, 停止流程并按 recovery reference 报告 transaction; 不伪造 Output 或 success.
 
-### 7. Finalize and Commit
+### 8. Finalize and Commit
 
 Tool 明确成功时, 通过 stdin 发送 complete payload:
 
@@ -107,7 +131,7 @@ Commit 失败时不再次调用图片工具. 使用 recovery inspection 判断�
 
 如果图片工具明确返回 safety rejection, 使用 `IMAGE_GENERATION_SAFETY_REJECTED` 和可选 bounded `moderation` metadata. Output-stage rejection 必须表述为生成结果被拒绝, 不得断言 Prompt violation. Generation 成功、失败或中断后都不得用 effective Prompt 覆盖用户 Draft; commit 只在 Draft hash 未变化时更新 `basedOnRevisionId`.
 
-### 8. Report
+### 9. Report
 
 最终报告必须包含:
 
@@ -117,6 +141,7 @@ Commit 失败时不再次调用图片工具. 使用 recovery inspection 判断�
 - 每个 Output 的 Archive relative path, SHA-256, media type 与尺寸.
 - tool name `image_gen.imagegen`, 已知 model/parameters 或明确 unknown.
 - Reference Image roles 与 guidance 摘要.
+- 每个 Session Image 的 source index、imported 或 reused 状态与最终 Image Asset SHA-256; 不暴露 opaque internal handle.
 - Draft concurrent edit, index degraded, quality observation 或 recovery warning.
 - Draft 正文保持用户编写的原文和语言; effective Prompt 仅通过 Prompt Revision 报告.
 

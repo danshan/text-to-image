@@ -37,6 +37,16 @@ Prompt Draft 是用户维护的当前工作稿. Skill 可以基于 Draft 构造 
 
 同一 Image Asset 可以选择多个 roles. roles 是关系上的生成意图, 不是新资产类型, 也不承诺模型完全遵循.
 
+roles 只从用户明确措辞或已经保存的 selection 读取:
+
+- “保持人物或物体”映射为 `subject`.
+- “参考画风”映射为 `style`.
+- “保持镜头或布局”映射为 `composition`.
+- “使用配色”映射为 `palette`.
+- 明确表达多个用途时可以映射多个 roles.
+
+用户只说“参考这张图”而用途不明确时, 在 prepare 前询问一次. 不设置隐式 `subject`, 不填充全部 roles, 也不根据图片内容单独推断 role. 图片内容只用于理解已经明确的 guidance.
+
 ## Reference Scaffolding
 
 在 effective prompt 中按 prepare request 的稳定顺序描述 Reference:

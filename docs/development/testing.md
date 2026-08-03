@@ -2,7 +2,7 @@
 title: Testing Strategy
 status: accepted
 owner: project
-last_updated: 2026-08-03
+last_updated: 2026-08-04
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -52,6 +52,7 @@ related:
 - Curation optimistic revision.
 - config precedence 和 Git-root-relative resolution.
 - error code mapping.
+- Image source canonicalization、inspection metadata 与 missing、unreadable、unsupported、invalid error mapping.
 
 时间、ID、hostname 和 process liveness 通过 injectable adapters 控制, 避免 nondeterministic tests.
 
@@ -154,6 +155,11 @@ before_lock_release
 - material Prompt change confirmation.
 - Draft concurrent edit during generation.
 - index failure after Archive commit.
+- materialized Session Image 在固定 Library root 中先 inspection、后 import、再 prepare.
+- 多张 Session Image 在任一 inspection 失败时不执行任何 import 或 Generation prepare.
+- opaque handle 报告 `SESSION_IMAGE_NOT_MATERIALIZED`, sandbox denial 不误报为 missing.
+- Reference roles 只从明确措辞解析, 语义不足时询问且不设置默认值.
+- inspection 与 import hash 不一致时停止 Generation, 已提交 import 不执行回滚.
 
 fake generator 只模拟 tool boundary, 不绕过 staging、capture、commit 与 validator.
 
@@ -237,7 +243,8 @@ Automation 不能替代 manual screen reader 和 keyboard smoke test. Release ch
 
 1. 无 Reference Image 的 built-in generate.
 2. 带 `subject` 与 `composition` Reference Image 的 built-in generate.
-3. 从旧 Prompt Revision 分支后 generate.
+3. 会话中插入的 materialized Session Image 自动导入后作为 Reference Image generate.
+4. 从旧 Prompt Revision 分支后 generate.
 
 每次验证:
 

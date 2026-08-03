@@ -32,6 +32,14 @@ _Avoid_: Reference asset, copied input
 一次不可变的图片生成工具调用, 绑定一个 Prompt Revision 和一组确定的 Reference Image. 重试会产生新的 Generation, 单个 Generation 可以有零个或多个输出, 终态为 `succeeded`, `failed` 或 `interrupted`; `interrupted` 表示工具调用结果无法确定.
 _Avoid_: Creation, batch, retry
 
+**Generation Issue**:
+由已提交 Generation 的 known failure 或 uncertain outcome 表达的用户关注事项. 它不是 Image Asset, 也不改变 Generation 的 immutable provenance.
+_Avoid_: Failed image, broken asset, prompt violation
+
+**Safety Rejection**:
+图片生成工具在 input 或 output moderation stage 拒绝一次 Generation 的 known failure. Output-stage Safety Rejection 表示生成结果被拒绝, 不证明 Prompt 本身违规.
+_Avoid_: Prompt violation, policy verdict, moderation error
+
 **Replay**:
 尽力复用既有 Generation 的全部已知输入和参数而产生的新 Generation. 它保留 provenance, 但不承诺像素级相同的输出.
 _Avoid_: Reproduction, deterministic retry

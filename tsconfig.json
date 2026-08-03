@@ -4,6 +4,13 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "tests/**/*.ts", "*.ts"],
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "scripts/**/*.mts",
+    "tests/**/*.ts",
+    "*.ts"
+  ],
   "exclude": ["apps/web"]
 }

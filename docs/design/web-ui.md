@@ -11,13 +11,14 @@ related:
   - ../adr/0007-separate-curation-from-provenance.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
+  - ../adr/0011-allow-configurable-trusted-lan-binding.md
 ---
 
 # Web UI 设计
 
 ## Context
 
-Web UI 是单用户、本地、client-rendered 的 Asset Library read-and-curate surface. 它通过只监听 loopback 的 Fastify service 读取权威 records 和 SQLite read model, 并通过共享 packages 更新 Draft、Curation 与 recovery commands.
+Web UI 是单用户、本地、client-rendered 的 Asset Library read-and-curate surface. 它通过 Browser-facing listener 读取权威 records 和 SQLite read model, 并通过共享 packages 更新 Draft、Curation 与 recovery commands.
 
 默认入口服务“找图”, Creation 页面服务“理解创作过程”. Web UI 不直接启动 Codex 或 image generation.
 
@@ -321,7 +322,8 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 
 ## Local Service Security
 
-- 只绑定 `127.0.0.1`, 不绑定 `0.0.0.0`.
+- 默认绑定 `127.0.0.1`; 用户可以显式选择具体 IP、`0.0.0.0` 或 `::` 用于 trusted LAN.
+- Wildcard bind 只允许启动时发现的 usable active interface IP literal, 不接受 scoped IPv6 link-local address 或 DNS hostname; interface 变化后需要重启.
 - 启动时生成高熵 session token, 通过同源 bootstrap document 注入前端 memory.
 - mutation 与 sensitive read request 发送 `X-Session-Token`.
 - 校验精确 `Host` 和 `Origin`, 不启用 CORS wildcard.
@@ -329,6 +331,7 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 - 静态资源与 API response 默认 `Cache-Control` 清晰区分; bootstrap token 不进入持久 browser cache.
 - Server 只在 bootstrap 与 Library transition response 中返回 resolved absolute Library path.
 - Library path 由 shared resolver canonicalize, 并受 Server OS account permissions 限制; Archive file access 仍使用 shared root containment.
+- Non-loopback 模式不增加 access secret 或 TLS, 不支持直接暴露到公网.
 
 ## Loading, Empty, Error and Degraded States
 

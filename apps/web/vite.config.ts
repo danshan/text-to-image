@@ -1,5 +1,11 @@
+import { isIP } from "node:net";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+
+const listenHost = process.env.TEXT_TO_IMAGE_HOST ?? "127.0.0.1";
+if (isIP(listenHost) === 0) {
+  throw new TypeError("TEXT_TO_IMAGE_HOST must be an IPv4 or IPv6 address");
+}
 
 export default defineConfig({
   plugins: [react()],
@@ -8,9 +14,9 @@ export default defineConfig({
     target: "es2022",
   },
   server: {
-    host: "127.0.0.1",
+    host: listenHost,
     port: 5173,
-    strictPort: false,
+    strictPort: true,
     proxy: {
       "/api": {
         target: "http://127.0.0.1:4174",

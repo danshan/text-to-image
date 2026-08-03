@@ -15,7 +15,13 @@ npm run assetctl -- validate --library ./library --full
 npm run dev
 ```
 
-开发 UI 位于 `http://127.0.0.1:5173`. Fastify service 只监听 loopback. Web UI 不会启动 Codex; 图片生成必须在 Codex 中显式调用 `$generate-and-archive`.
+开发 UI 默认位于 `http://127.0.0.1:5173`. `npm start` 与 `npm run dev` 都接受 `--host <ip>`; 支持具体 IPv4、IPv6、`0.0.0.0` 与 `::`:
+
+```bash
+npm run dev -- --host 0.0.0.0
+```
+
+Wildcard 模式会输出当前 usable active interfaces 的 concrete URLs; scoped IPv6 link-local address 不发布. Non-loopback listener 只用于 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺. Web UI 不会启动 Codex; 图片生成必须在 Codex 中显式调用 `$generate-and-archive`.
 
 `npm run dev` 不会隐式初始化 Library. 如果 root、`library.json` 或访问权限缺失, Server 进入 `LIBRARY_UNAVAILABLE`, Web UI 在 Settings 显示绝对 Library path, 并提供 Initialize、Select 与 Retry. 此状态不会创建 Library 目录、`.cache/`、SQLite index 或 fallback Library; Index rebuild 不能恢复已删除的事实来源.
 

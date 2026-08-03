@@ -45,6 +45,7 @@
 - 源码、Schema、fixtures 和正式文档进入 Git; 用户运行时 Asset Library 整体不进入 Git.
 - Library 路径必须通过共享 resolver 获取, 支持仓库外目录; 相对路径统一以 Git root 解析.
 - 设计或行为变化必须在同一改动中更新对应正式文档, 必要时增加 ADR.
+- AI 修改任何项目逻辑时, 必须在同一改动中同步更新对应正式文档、测试与 `progress.md`; 仅修改代码不得视为完成.
 - 新术语或术语含义变化必须立即更新 `CONTEXT.md`.
 - 每次实现必须同时更新测试与 `progress.md`; 不得声称未实际运行的命令已经通过.
 - root command contract 见 `docs/development/guide.md`; Archive、Schema、Hook 与 recovery 修改必须运行对应 integration tests.

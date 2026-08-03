@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "assetctl": "tsx apps/cli/src/main.ts",
-    "dev": "concurrently -k -n server,web \"npm run dev -w @text-to-image/server\" \"npm run dev -w @text-to-image/web\"",
+    "dev": "tsx scripts/dev.mts",
     "start": "tsx apps/server/src/main.ts",
     "build": "node scripts/build.mjs",
     "typecheck": "node scripts/typecheck.mjs",

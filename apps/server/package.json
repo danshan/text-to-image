@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "TEXT_TO_IMAGE_PORT=4174 TEXT_TO_IMAGE_DEV_ORIGIN=http://127.0.0.1:5173 tsx watch src/main.ts",
+    "dev": "TEXT_TO_IMAGE_PORT=4174 TEXT_TO_IMAGE_DEV_PORT=5173 tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "build": "tsc -b tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

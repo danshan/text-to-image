@@ -9,6 +9,7 @@ related:
   - ../design/generation-workflow.md
   - ../design/web-ui.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
+  - ../adr/0011-allow-configurable-trusted-lan-binding.md
 ---
 
 # 产品需求
@@ -24,7 +25,7 @@ related:
 ## Non-goals
 
 - Web UI 不直接启动 Codex 或图片生成工具.
-- MVP 不支持多用户、身份认证、权限模型、远程访问、云同步或移动端.
+- MVP 不支持多用户、身份认证、权限模型、公网访问、云同步或移动端. 允许用户显式绑定 trusted LAN interface.
 - MVP 不支持 Archive 物理删除、Purge、Git LFS 或 Library 导出包.
 - MVP 不支持语义搜索、视觉相似度搜索、自动标签或图片聚类.
 - MVP 不支持 Prompt 多父节点合并、实时协作或自动批量生成调度.
@@ -175,11 +176,12 @@ related:
 
 - `NFR-001`: MVP 正式支持 macOS, Linux 为 best-effort, Windows 不支持.
 - `NFR-002`: Node.js 24 是固定运行时.
-- `NFR-003`: 本地 HTTP 服务只监听 loopback, 并验证 `Host`, `Origin` 与 session token.
+- `NFR-003`: Browser-facing listener 默认绑定 `127.0.0.1`, 可以通过 `--host` 或环境变量显式绑定具体 IP、`0.0.0.0` 或 `::`; 服务必须验证 `Host`, `Origin` 与 session token.
 - `NFR-004`: 所有 managed path 必须位于 canonical Library root 内, 禁止 path traversal 和内部 symlink.
 - `NFR-005`: 所有正式行为、Schema、测试与恢复流程必须有仓库内文档.
 - `NFR-006`: 应用在无外部字体和无云服务时可启动并使用已有 Library.
 - `NFR-007`: Web UI 第一版只承诺桌面 viewport `1024x768` 及以上; 使用固定 200 px sidebar、紧凑 page header、统一可读字号和不产生横向 overflow 的 detail 两栏布局.
+- `NFR-008`: Non-loopback listener 只面向 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺. Wildcard bind 只允许启动时发现的 usable active interface IP literal, interface 变化后必须重启.
 
 ## Acceptance Criteria
 
@@ -190,6 +192,8 @@ related:
 - fake generator 自动测试覆盖成功、失败、中断与 Replay; 发布验收包含真实 Codex 生成 smoke test.
 - Web UI 端到端覆盖图库、详情、Prompt diff、Curation、搜索、过滤与恢复提醒.
 - Web UI 和 API integration 覆盖运行时删除 active Library、绝对路径输入、初始化或选择、transition progress、原子切换和 stale session rejection.
+- `npm start` 与 `npm run dev` 都支持 `--host <ip>`. CLI 参数覆盖 `TEXT_TO_IMAGE_HOST`, 默认值为 `127.0.0.1`; invalid hostname 必须 fail fast.
+- Wildcard bind 输出每个 active interface 的 concrete URL, 接受对应 IP literal 的 `Host` 与 same-host `Origin`, 并继续拒绝任意 hostname、unknown interface、invalid Origin 与 CORS wildcard.
 - Safety Rejection 能归档 input、output 与 unknown moderation stage 及零到多个 categories, 旧的无 `moderation` Generation record 仍通过 Schema 校验.
 - Gallery 对每个 active Creation 只展示最新 failed 或 interrupted Generation Issue; 后续 succeeded Generation 会移除该 Creation 的全局提示, 历史仍可从 Timeline 访问.
 - Generation Detail 对 output-stage rejection 使用非归罪文案和 category-level guidance, 不把建议描述为已确认的触发词.

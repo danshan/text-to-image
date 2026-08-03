@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 8
+Phase 10
 
 ## Phases
 
@@ -98,9 +98,18 @@ Phase 8
 - [x] 完成 focused、root contract 与 documentation verification, 记录结果并恢复本阶段独立文档状态.
 - **Status:** completed
 
+### Phase 10: Configurable Listen Address
+
+- [x] 通过逐项访谈确认 CLI host 参数、wildcard、trusted LAN 与开发模式语义.
+- [x] 将受影响正式文档切回 `draft`, 并记录 trusted LAN contract.
+- [x] 实现 `--host` parsing、配置优先级、Browser-facing development listener 与 wildcard interface allowlist.
+- [x] 补充 config、security、startup 与 development launcher tests.
+- [x] 执行 focused、root 与 documentation verification, 记录结果并恢复文档为 `accepted`.
+- **Status:** completed
+
 ## Remaining Design Questions
 
-无. Phase 8 继续按 draft contract 实现; Phase 9 已完成.
+无. Phase 10 按已确认的 trusted LAN contract 实现.
 
 ## Errors Encountered
 
@@ -122,3 +131,6 @@ Phase 8
 | Archive adapter factory read the manifest before initialization mode           |       1 | Removed the eager read and covered the real factory path         |
 | npm workspace `cwd` was treated as the repository Git root                     |       1 | Resolve the nearest Git root before Library configuration        |
 | Playwright browser processes aborted inside the filesystem sandbox             |       1 | Re-ran the installed browsers with scoped outside-sandbox access |
+| Standalone Server typecheck read stale referenced package declarations         |       1 | Use root build/typecheck contract after fixing the new test type |
+| Initial host smoke failed because sandbox denied the `tsx` IPC socket          |       1 | Re-ran the isolated temp-root smoke outside the sandbox          |
+| Format check found the listener test changed after its earlier Prettier pass   |       1 | Re-format the exact test file before final verification          |

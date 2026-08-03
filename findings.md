@@ -54,6 +54,11 @@
 - Transition commit 排空旧 Library 请求, 原子持久化 canonical path, 替换唯一 active context 并轮换 session token; 其他 tab 必须重新 bootstrap.
 - 外部恢复原路径后必须显式 Retry. 初始化成功但后续切换失败时保留 detached Library, 不自动删除, 旧 context 与持久化选择不变.
 - Stop Hook 对 `ARCHIVE_NOT_INITIALIZED` 允许结束并指向 Web Settings; 只有现存 Library 的真实完整性失败继续阻断.
+- Browser-facing listener 支持 `--host <ip>`, 接受具体 IPv4、IPv6、`0.0.0.0` 与 `::`, 但不接受 hostname.
+- `--host` 同时适用于 production-like `npm start` 与 hot-reload `npm run dev`; 开发模式只暴露 Vite listener, Fastify proxy target 保持 loopback.
+- Listen host precedence 是 CLI `--host`、`TEXT_TO_IMAGE_HOST`、默认 `127.0.0.1`.
+- Wildcard bind 在启动时枚举 active interfaces, 输出 concrete URLs, 并只允许对应 IP literal 的 `Host` 与 `Origin`; interface 变化后需要重启.
+- Non-loopback listener 只用于 trusted LAN, 保留现有 session token, 不增加 access secret、TLS 或公网支持.
 
 ## Phase 8 Implementation Findings
 
@@ -61,6 +66,13 @@
 - Generation Issue 的安全信息必须在 Archive boundary 做 bounded validation, 在 read model/API 中 typed projection, 在 Web UI 中忽略未知 provider fields. 旧的 `{ code, summary, retryable }` records 仍显示摘要, 不要求补写 moderation.
 - Latest Issue 查询以 active Creation 的最新 Generation 为窗口分区; succeeded 会移除全局 Issue, shelved Creation 不进入 Gallery region, 失败历史仍保留在 Creation Timeline.
 - Web UI 的可读性问题不是单个颜色值或字号修补. Compact Editorial Workspace 需要固定 200 px sidebar、紧凑 header、统一 14 px body / 11 px metadata floor、260-320 px inspector 和独立深色 sidebar tokens; mobile drawer 不在当前 desktop scope.
+
+## Phase 10 Implementation Findings
+
+- Production-like runtime 只有 Fastify listener; development runtime 的 Browser-facing listener 是 Vite, Fastify 只需要作为 loopback proxy target. 两种模式必须共享同一个 `--host` 用户语义, 但不能机械地暴露 development Fastify port.
+- Wildcard bind 返回的 address 不能直接作为 Browser URL 或 exact Host allowlist. Server 必须在实际 port 已知后枚举对应 address family 的 active interfaces, 格式化 IPv6 bracket host, 再注册允许的 IP literal.
+- 现有 config 只允许 `TEXT_TO_IMAGE_HOST=127.0.0.1`, 且 development Origin 只有单值. 实现需要把 listen host parsing 与 endpoint discovery 提取为可单测的纯边界, 同时保留原环境变量兼容入口.
+- macOS `networkInterfaces()` 会返回需要 zone identifier 的 scoped IPv6 link-local address. 缺少 zone 的 Browser URL 不可用, 因而 wildcard discovery 只发布 `scopeid = 0` 的 IPv6 address.
 
 ## Research Findings
 
@@ -91,6 +103,7 @@
 - Initialization mode 必须从真实 process entrypoint 验证. 只测试 `createApp` 会遗漏 factory eager-read; npm workspace 还会把 process `cwd` 改为 workspace 目录, 因而 Server 默认路径必须通过 `.git` 向上解析, 不能直接使用 `process.cwd()`.
 - Commit Marker 文件名是随机 UUID, 不能代表提交顺序. Read Model 必须按 Marker `createdAt` 排序, 并在启动时检测 marker lag 后从文件系统重建.
 - Browser E2E 在受限文件系统沙箱内会因 Chromium 与 WebKit 进程启动失败而产生全量假失败; 相同 suite 在 scoped outside-sandbox execution 中通过.
+- Context7 返回的 Vite 7.3.1 官方资料确认 `vite --host 0.0.0.0` 是受支持的 CLI contract, `server.host` 接受 wildcard, 且 `server.proxy` 可以继续把 `/api` 转发到独立 loopback target.
 
 ## Resources
 

@@ -10,6 +10,7 @@ related:
   - ../design/web-ui.md
   - guide.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
+  - ../adr/0011-allow-configurable-trusted-lan-binding.md
 ---
 
 # 测试策略
@@ -173,7 +174,7 @@ Hook 是 guardrail, 测试还必须证明 writer 独立拒绝同类违规.
 
 ### API Tests
 
-Fastify injection 或 loopback server 覆盖:
+Fastify injection 或 local server 覆盖:
 
 - request/response Schema.
 - stable error codes.
@@ -188,7 +189,10 @@ Fastify injection 或 loopback server 覆盖:
 - invalid Host、Origin、token 与 CORS preflight.
 - path traversal、encoded traversal、invalid hash 和 arbitrary path parameters.
 - session token rotates on restart.
-- server never binds non-loopback interface.
+- listen host precedence、IPv4/IPv6 parsing、hostname rejection 与 missing option value.
+- concrete interface、`0.0.0.0` 与 `::` bind contract.
+- wildcard interface URL discovery、scoped IPv6 exclusion 与 IP literal Host/Origin allowlist.
+- development listener 暴露 Vite, Fastify proxy target 保持 loopback.
 
 ### Web UI Tests
 
@@ -332,7 +336,7 @@ npm test -w @text-to-image/web
 
 ### Playwright server startup failure
 
-记录动态 port 与 server stderr, 确认 Library fixture 初始化完成. 不复用开发者真实 Library.
+记录 configured host、动态 port 与 server stderr, 确认 Library fixture 初始化完成. 不复用开发者真实 Library.
 
 ### Performance regression
 

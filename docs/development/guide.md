@@ -11,6 +11,7 @@ related:
   - testing.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
+  - ../adr/0011-allow-configurable-trusted-lan-binding.md
 ---
 
 # 开发指南
@@ -100,7 +101,7 @@ npm root `package.json` 定义:
 
 ### `apps/server`
 
-使用 Fastify 提供 loopback HTTP API 和 Vite production assets. Handler 只做 authentication、validation、mapping 与 orchestration.
+使用 Fastify 提供 local HTTP API 和 Vite production assets. Handler 只做 authentication、validation、mapping 与 orchestration.
 
 ### `apps/web`
 
@@ -175,7 +176,7 @@ npm run dev
 3. Library Unavailable mode 不得创建 Library 目录、`.cache`、SQLite index 或 fallback Library.
 4. 如果 Library version unsupported, 显示 migration or upgrade diagnostic.
 5. 如果 Library healthy, 启动或重建 read model.
-6. 打开 loopback URL, 不自动绑定 external interface.
+6. 默认打开 loopback URL; 只有显式 `--host` 或 `TEXT_TO_IMAGE_HOST` 才绑定其他 interface.
 
 ## Configuration
 
@@ -199,7 +200,16 @@ CLI `--library` 优先级最高. 相对路径按 Git root 解析. 配置 parser 
 
 成功执行 CLI `init --library`、`library select --library` 或 Web Library transition 后, shared resolver 把 canonical absolute path 原子写入 Git root 的 `text-to-image.local.json`. 写入失败或 Library validation 失败时保留原配置. Web transition 会在 candidate ready 后排空旧请求、切换 runtime context 并轮换 session token, 无需重启 Server.
 
-Server port 默认由 OS 分配可用 loopback port, 避免固定端口冲突. 开发模式可以显式配置 port, 但仍只允许 loopback.
+Browser-facing listen host 的优先级为 CLI `--host`、`TEXT_TO_IMAGE_HOST`、默认 `127.0.0.1`. Host 必须是 IPv4 或 IPv6 literal; `0.0.0.0` 与 `::` 表示 wildcard. `npm start` 直接配置 Fastify, `npm run dev` 配置 Vite listener 并让 Fastify proxy target 保持 loopback.
+
+```bash
+npm start -- --host 192.168.1.10
+npm run dev -- --host 0.0.0.0
+```
+
+Wildcard bind 在启动时枚举 usable active interfaces 并输出 concrete URLs. Scoped IPv6 link-local address 因缺少 URL zone 不发布. 服务只接受其余 IP literal 对应的 `Host` 与 `Origin`; interface 变化后需要重启. Non-loopback 模式仅用于 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺.
+
+Server port 默认由 OS 分配可用 port, 避免固定端口冲突. 开发模式可以显式配置 port.
 
 ## Development Workflow
 

@@ -172,6 +172,34 @@
   - `npm run fixtures:validate`: 2 of 2 fixtures matched.
   - Phase 9 独立修改的系统架构与开发指南恢复为 `accepted`; 与 Phase 8 共享的正式文档继续保持 `draft`.
 
+### Phase 10: Configurable Listen Address
+
+- **Status:** completed
+- **Started:** 2026-08-03
+- **Completed:** 2026-08-03
+- 已完成:
+  - 通过逐项访谈确认 IPv4、IPv6、wildcard、trusted LAN、CLI precedence 与 Browser-facing development listener contract.
+  - 将产品需求、系统架构、Web UI、开发指南与测试策略切回 `draft`, 新增 ADR 0011.
+  - 在 `AGENTS.md` 强化 AI 修改项目逻辑时同步更新正式文档、测试与 `progress.md` 的规则.
+  - 实现 `--host` parsing、IP literal validation、wildcard interface URL discovery、runtime Host/Origin allowlist 与 development launcher.
+- 验证:
+  - Focused Server config/listener tests: 2 files, 8 tests passed.
+  - Web workspace typecheck: passed.
+  - Standalone Server workspace typecheck: failed because referenced package declarations had not been rebuilt; 同时发现并修复新增 test helper 的 IPv4/IPv6 discriminated union 类型错误. 后续使用 root build/typecheck contract 复验.
+  - Root build 与 root typecheck: passed.
+  - Initial production-like smoke 在 sandbox 内因 `tsx` IPC socket `EPERM` 失败; 使用相同 isolated temp root 在 scoped outside-sandbox execution 中通过.
+  - `npm start -- --host 0.0.0.0`: 输出 loopback 与 LAN concrete URLs; bootstrap `200`, hostile Host `403`.
+  - `npm run dev -- --host 0.0.0.0`: Vite 暴露 wildcard `5173`, Fastify 保持 loopback `4174`; Web 与 LAN Origin proxy bootstrap 均返回 `200`.
+  - `npm test`: Server 2 files / 9 tests, Hook and Skill 28 tests, Web 10 files / 23 tests passed.
+  - `npm run test:integration`: 4 files, 33 tests passed.
+  - Final root build: passed.
+  - Initial `npm run format:check`: failed only because `listener.test.ts` was patched after its earlier Prettier pass; exact file was reformatted before final rerun.
+  - Final `npm test`, `npm run build`, `npm run typecheck` 与 `npm run lint`: passed after scoped IPv6 filtering was added.
+  - `npm run test:e2e`: 13 passed, 1 existing intentional WebKit mutation skip.
+  - Code、README、ADR 与正式文档交叉审查完成; 受影响正式文档恢复为 `accepted`.
+  - Final `npm run docs:check`: 32 Markdown files and 11 ADRs passed.
+  - Final `npm run format:check` 与 `git diff --check`: passed.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |

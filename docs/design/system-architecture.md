@@ -10,6 +10,7 @@ related:
   - web-ui.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
+  - ../adr/0011-allow-configurable-trusted-lan-binding.md
 ---
 
 # 系统架构
@@ -64,7 +65,7 @@ flowchart LR
 | Component                 | Owns                                                                                | Must Not Own                                                       |
 | ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | Browser Web UI            | UI state、URL state、unsubmitted form edits                                         | filesystem access、Archive write logic、generation invocation      |
-| Fastify Local Service     | loopback security、HTTP validation、orchestration                                   | domain duplicate、arbitrary file endpoint、authoritative user data |
+| Fastify Local Service     | listener security、HTTP validation、orchestration                                   | domain duplicate、arbitrary file endpoint、authoritative user data |
 | `assetctl`                | human/machine CLI、init、validate、commit、recover、migrate                         | independent Archive implementation                                 |
 | Shared Archive Package    | filesystem contract、hash、lock、transaction、Commit Marker、Curation atomic update | HTTP、React、Codex prompt decisions                                |
 | Read Model Package        | SQLite projection、FTS、query、thumbnail metadata                                   | non-rebuildable user data                                          |
@@ -80,7 +81,7 @@ flowchart LR
 一个 local service process 打开一个 canonical Library root:
 
 ```text
-Browser -> 127.0.0.1:<ephemeral-port> -> Fastify -> Shared Packages -> Library
+Browser -> <configured-ip>:<port> -> Fastify -> Shared Packages -> Library
 ```
 
 生产模式由 Fastify 托管 Vite static build. 开发模式可以由 Vite dev server 代理 `/api/v1`, 但最终 Host、Origin 与 token security behavior 必须在 production-like integration test 中验证.
@@ -89,12 +90,12 @@ Browser -> 127.0.0.1:<ephemeral-port> -> Fastify -> Shared Packages -> Library
 
 1. 解析 Library path.
 2. 检查 `library.json` 是否存在.
-3. 缺少 root 或 manifest 时跳过 read model, 进入 Library Unavailable control mode 并绑定 loopback.
+3. 缺少 root 或 manifest 时跳过 read model, 进入 Library Unavailable control mode.
 4. manifest 存在时验证 format 与 permissions.
 5. 获取 read-only health snapshot.
 6. 打开 SQLite read model; cache 缺失、损坏或 Commit Marker lag 时先重建.
-7. 生成 session token 并绑定 loopback.
-8. 输出本地 URL.
+7. 生成 session token 并绑定 configured host.
+8. 对 wildcard bind 枚举 usable active interfaces, 建立 IP literal allowlist 并输出 concrete URLs. Scoped IPv6 link-local address 不发布为缺少 zone 的 URL.
 
 Library Unavailable mode 不会创建 Library root、`.cache/`、SQLite index 或 fallback Library. Bootstrap 返回统一 `LIBRARY_UNAVAILABLE` state、reason 与 allowed actions. Static Web、bootstrap、health 和 Library transition control plane 保持可用, 其他 Library API 返回 `503 LIBRARY_UNAVAILABLE`. Library invalid 仍属于独立的 read-only diagnostics mode.
 
@@ -102,7 +103,7 @@ Library Unavailable mode 不会创建 Library root、`.cache/`、SQLite index �
 
 `LibraryRuntime` 是 active Archive adapter、Read Model、Library Service 与 Thumbnail Cache 的唯一所有者. 每个 Library data request 在入口获取 immutable context snapshot, 在 response 完成时释放. Request boundary 发现 root、manifest 或权限消失后, runtime 阻断新 data request 并进入 Library Unavailable; 外部恢复后仍要求显式 Retry.
 
-Settings 显示 bootstrap 解析出的绝对 Library path, 并允许用户输入 Server 账号可访问的绝对目标路径. Server 不提供通用 filesystem directory listing 或文件读取 endpoint; Library transition 继续受 loopback、Host、Origin、session token、canonicalization 与 OS permissions 约束.
+Settings 显示 bootstrap 解析出的绝对 Library path, 并允许用户输入 Server 账号可访问的绝对目标路径. Server 不提供通用 filesystem directory listing 或文件读取 endpoint; Library transition 继续受 listener allowlist、Host、Origin、session token、canonicalization 与 OS permissions 约束.
 
 同一时间只允许一个内存态 Library transition. Candidate 的 full validation 与 Index rebuild 在旧 Library 继续服务时完成. Candidate ready 后, commit boundary 拒绝新请求并排空旧请求, 再次校验 candidate, 原子持久化 `text-to-image.local.json`, 替换 active context 并轮换 session token. 其他 Browser tab 的旧 token 随即失效. 初始化已成功而后续步骤失败时保留新 Library, 但不改变旧 active context 或持久化选择.
 
@@ -199,11 +200,13 @@ Git 不保存:
 
 ### Browser to Local Service
 
-- loopback bind.
+- 默认绑定 `127.0.0.1`; explicit `--host` 可以选择具体 IPv4、IPv6、`0.0.0.0` 或 `::`.
+- Wildcard bind 在启动时枚举 usable active interfaces, 只接受对应 IP literal 与实际 port; scoped IPv6 link-local address 与 DNS hostname 不进入 allowlist.
 - exact Host/Origin.
 - per-process session token.
 - no wildcard CORS.
 - CSP and content endpoint by hash.
+- Non-loopback 模式只用于 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺.
 
 ### Local Service to Filesystem
 

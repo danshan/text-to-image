@@ -5,6 +5,7 @@ const bootstrap = {
   apiVersion: "v1" as const,
   libraryFormatVersion: 1,
   sessionToken: "session-secret",
+  initialization: null,
   capabilities: { curation: true, recovery: true, generationFromWeb: false as const },
 };
 

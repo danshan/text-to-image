@@ -13,6 +13,7 @@ export type {
   HealthResponse,
   ImageDetail,
   ImageSummary,
+  LibraryInitializationRequired,
   LibraryHealth,
   MutationResponse,
   PageInfo,

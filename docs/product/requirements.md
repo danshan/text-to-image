@@ -2,7 +2,7 @@
 title: Product Requirements
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 related:
   - ../../CONTEXT.md
   - ../design/asset-library.md
@@ -99,6 +99,7 @@ related:
 - `FR-LIB-006`: 用户运行时 Library 整体不进入源码 Git 历史; Schema、fixtures、实现和文档必须进入 Git.
 - `FR-LIB-007`: Archive records、Image Asset 与 Commit Marker 不可原地修改或删除.
 - `FR-LIB-008`: 只有被有效 Commit Marker 覆盖的记录才属于已提交 Archive.
+- `FR-LIB-009`: 缺少 `library.json` 时, Server 必须进入初始化诊断模式并显示 exact init command, 不得创建 Library、cache 或 fallback Library.
 
 ### Prompt and Generation
 

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { findGitRoot } from "@text-to-image/archive";
 
 export interface ServerConfig {
   host: "127.0.0.1";
@@ -27,7 +28,10 @@ function parsePort(raw: string | undefined): number {
   return value;
 }
 
-export function loadServerConfig(environment: NodeJS.ProcessEnv = process.env): ServerConfig {
+export function loadServerConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+  startDirectory = process.cwd(),
+): ServerConfig {
   const host = environment.TEXT_TO_IMAGE_HOST ?? "127.0.0.1";
   if (host !== "127.0.0.1") {
     throw new TypeError("TEXT_TO_IMAGE_HOST must be 127.0.0.1");
@@ -40,7 +44,9 @@ export function loadServerConfig(environment: NodeJS.ProcessEnv = process.env): 
     host,
     port: parsePort(environment.TEXT_TO_IMAGE_PORT),
     logLevel: logLevel as ServerConfig["logLevel"],
-    gitRoot: resolve(environment.TEXT_TO_IMAGE_GIT_ROOT ?? process.cwd()),
+    gitRoot: environment.TEXT_TO_IMAGE_GIT_ROOT
+      ? resolve(startDirectory, environment.TEXT_TO_IMAGE_GIT_ROOT)
+      : findGitRoot(startDirectory),
   };
   const result: ServerConfig = environment.TEXT_TO_IMAGE_LIBRARY
     ? { ...base, libraryArgument: environment.TEXT_TO_IMAGE_LIBRARY }

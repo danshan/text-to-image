@@ -99,6 +99,21 @@
   - 完成 README、AGENTS、正式文档、计划、发现与进度记录的最终同步.
   - 确认所有 Codex 约束均位于仓库内, 未修改全局 Codex 配置.
 
+### Phase 6: First-run Library Initialization
+
+- **Status:** completed
+- **Started:** 2026-08-03
+- 已完成:
+  - 在 Read Model 的 open 与 rebuild 边界增加 `library.json` 前置检查, 缺少 manifest 时不创建 Library root、`.cache/` 或 SQLite index.
+  - Server 缺少 manifest 时跳过 read model, 以 initialization-required diagnostics mode 继续提供 bootstrap、health 与静态 Web UI.
+  - 初始化模式下阻断其他 Library API, 返回 `503 LIBRARY_INITIALIZATION_REQUIRED`、canonical path 与 shell-safe exact init command.
+  - Web bootstrap screen 展示解析路径、初始化命令和 restart local service 指引, 不构造 API client 或请求 Gallery.
+  - 同步 README、产品需求、系统架构、Web UI、开发指南与测试策略.
+  - 新增 Read Model 无副作用回归测试、Server setup/API guard integration test 与 Web first-run component test.
+  - 真实启动验证发现 Archive adapter factory 在 initialization mode 前 eager-read manifest; 已移除重复读取并补 factory regression test.
+  - 修正 npm workspace 从 `apps/server` 启动时的 Git root 解析, Server 现在向上查找 `.git`, initialization command 指向仓库根目录的 `library/`.
+  - 使用真实 `npm run dev` 和 loopback bootstrap 验证 initialization payload、canonical path 与 exact init command.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                        | Status |
@@ -107,10 +122,10 @@
 | Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                     | pass   |
 | Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 53-module Web build passed | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                 | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 27 Hook/Skill tests and 14 Web tests passed                                   | pass   |
-| Integration                         | Archive、read model and HTTP security pass                                          | 3 files, 17 tests passed                                                      | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 27 Hook/Skill tests and 15 Web tests passed                                   | pass   |
+| Integration                         | Archive、read model and HTTP security pass                                          | 4 files, 23 tests passed                                                      | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice                                     | 11 passed, 1 intentional WebKit mutation skip                                 | pass   |
-| Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 655 ms, WebKit 1.4 s                                                 | pass   |
+| Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                 | pass   |
 | Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                     | pass   |
 | Warm Gallery query                  | p95 <= 200 ms                                                                       | 51.92 ms across 100 queries                                                   | pass   |
 | Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                | pass   |
@@ -135,13 +150,17 @@
 | 2026-08-03 | Server build emitted JavaScript and declarations into package source |       1 | Removed exact generated artifacts and corrected project refs     |
 | 2026-08-03 | Documentation check traversed nested dependency and eval workspaces  |       1 | Excluded generated and dependency directories from traversal     |
 | 2026-08-03 | Strict Skill eval assertions required real execution evidence        |       1 | Kept offline scores at zero and documented a future fake harness |
+| 2026-08-03 | Web test used an unavailable `jest-dom` matcher                      |       1 | Replaced it with existing Chai assertions                        |
+| 2026-08-03 | Playwright server could not create a `tsx` IPC socket in the sandbox |       1 | Re-ran the E2E suite with scoped approval                        |
+| 2026-08-03 | Archive adapter factory bypassed initialization diagnostics          |       1 | Removed its eager manifest read and added a factory test         |
+| 2026-08-03 | Server workspace `cwd` resolved `apps/server/library`                |       1 | Resolve the nearest Git root before Library configuration        |
 
 ## 5-Question Reboot Check
 
 | Question             | Answer                                                                        |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Where am I?          | Phase 5 completed                                                             |
+| Where am I?          | Phase 6 completed                                                             |
 | Where am I going?    | Final handoff                                                                 |
 | What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI |
 | What have I learned? | See `findings.md`                                                             |
-| What have I done?    | Implemented and verified the complete MVP slice                               |
+| What have I done?    | Implemented the MVP and verified safe first-run Library initialization        |

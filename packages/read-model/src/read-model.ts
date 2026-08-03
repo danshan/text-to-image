@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
-import { latestMarkerId, rebuildReadModel } from "./rebuild.js";
+import { assertLibraryManifestPresent, latestMarkerId, rebuildReadModel } from "./rebuild.js";
 import type {
   GalleryQuery,
   IndexedCreation,
@@ -94,6 +94,7 @@ export class ReadModel {
   }
 
   async open(options: { rebuildIfMissing?: boolean } = {}): Promise<void> {
+    await assertLibraryManifestPresent(this.#root);
     try {
       this.#database = new DatabaseSync(this.#path, { readOnly: true });
       this.#database.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();

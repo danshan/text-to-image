@@ -2,7 +2,7 @@
 title: Development Guide
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -166,10 +166,12 @@ npm run dev
 
 首次启动 Web UI 时:
 
-1. 如果 Library 不存在, 显示 exact init command.
-2. 如果 Library version unsupported, 显示 migration or upgrade diagnostic.
-3. 如果 Library healthy, 启动或重建 read model.
-4. 打开 loopback URL, 不自动绑定 external interface.
+1. 如果 `library.json` 不存在, Server 不打开或重建 read model, 只启动初始化诊断模式.
+2. Web UI 显示 canonical Library path 和 shell-safe exact init command.
+3. 初始化诊断模式不得创建 Library 目录、`.cache/`、SQLite index 或 fallback Library.
+4. 如果 Library version unsupported, 显示 migration or upgrade diagnostic.
+5. 如果 Library healthy, 启动或重建 read model.
+6. 打开 loopback URL, 不自动绑定 external interface.
 
 ## Configuration
 
@@ -287,7 +289,7 @@ npm run test:performance
 
 ### Library path not found
 
-运行 capabilities/diagnostic, 检查 CLI 参数、本机配置和默认配置. 不在 fallback path 自动创建 Library.
+Web UI 显示解析后的 canonical path 与 exact init command. 运行该命令后 restart local service 并 reload 页面. Server 在重启前只提供 bootstrap 和 health diagnostics, 其他 Library API 返回 `LIBRARY_INITIALIZATION_REQUIRED`; 不创建 Library、`.cache/` 或 fallback path.
 
 ### External Library permission denied
 

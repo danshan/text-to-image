@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { LibraryService } from "./library/library-service.js";
 import { createArchiveAdapter } from "./shared/archive-adapter.js";
 import { loadServerConfig } from "./shared/config.js";
+import { resolveLibraryInitialization } from "./shared/library-initialization.js";
 
 async function main(): Promise<void> {
   const config = loadServerConfig();
@@ -10,10 +11,16 @@ async function main(): Promise<void> {
     gitRoot: config.gitRoot,
     ...(config.libraryArgument ? { libraryArgument: config.libraryArgument } : {}),
   });
+  const initialization = resolveLibraryInitialization(archive.libraryRoot);
   const readModel = new ReadModel(archive.libraryRoot);
-  await readModel.open();
+  if (!initialization) await readModel.open();
   const service = new LibraryService(archive, readModel);
-  const { app, security } = await createApp({ archive, service, logLevel: config.logLevel });
+  const { app, security } = await createApp({
+    archive,
+    service,
+    initialization,
+    logLevel: config.logLevel,
+  });
   const address = await app.listen({ host: config.host, port: config.port });
   security.allowHost(new URL(address).host);
   if (config.devOrigin) security.allowOrigin(config.devOrigin);

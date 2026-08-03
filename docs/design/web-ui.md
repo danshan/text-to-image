@@ -2,7 +2,7 @@
 title: Web UI Design
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 related:
   - ../../CONTEXT.md
   - ../product/requirements.md
@@ -336,6 +336,7 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 - Curation conflict: 保留 local draft, 显示 server current state.
 - External Draft edit: editor 切换为 conflict state, 禁止自动保存覆盖.
 - Library moved or permission lost: service 进入 read-only unavailable state, 不创建默认替代目录.
+- Library manifest missing: bootstrap screen 显示 canonical path 与 shell-safe exact init command; 不请求 Gallery 或其他 Library API.
 - Unsupported format: 显示 required app/Library version, 不提供 force-open.
 
 ## Compatibility
@@ -346,6 +347,7 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
 {
   "apiVersion": "v1",
   "libraryFormatVersion": 1,
+  "initialization": null,
   "capabilities": {
     "curation": true,
     "recovery": true,
@@ -353,6 +355,18 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
   }
 }
 ```
+
+如果 `library.json` 不存在, `initialization` 改为:
+
+```json
+{
+  "required": true,
+  "libraryRoot": "/Volumes/Media/TextToImageLibrary",
+  "initCommand": "npm run assetctl -- init --library '/Volumes/Media/TextToImageLibrary'"
+}
+```
+
+此状态下 `curation` 与 `recovery` capability 均为 `false`. UI 在 bootstrap 层停止常规 route rendering, 因而不会触发会访问未打开 read model 的请求. 用户完成初始化后必须 restart local service, 再 reload 页面获取新的 bootstrap.
 
 前端遇到不支持的 major API version 时显示 upgrade error, 不尝试猜测 response shape.
 

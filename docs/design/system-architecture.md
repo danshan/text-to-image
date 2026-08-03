@@ -2,7 +2,7 @@
 title: System Architecture
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 related:
   - ../product/requirements.md
   - asset-library.md
@@ -87,13 +87,15 @@ Browser -> 127.0.0.1:<ephemeral-port> -> Fastify -> Shared Packages -> Library
 服务启动顺序:
 
 1. 解析 Library path.
-2. 验证 format 与 permissions.
-3. 获取 read-only health snapshot.
-4. 打开或重建 SQLite read model.
-5. 生成 session token 并绑定 loopback.
-6. 输出本地 URL.
+2. 检查 `library.json` 是否存在.
+3. 缺少 manifest 时跳过 read model, 进入初始化诊断模式并绑定 loopback.
+4. manifest 存在时验证 format 与 permissions.
+5. 获取 read-only health snapshot.
+6. 打开或重建 SQLite read model.
+7. 生成 session token 并绑定 loopback.
+8. 输出本地 URL.
 
-如果 Library invalid, server 可以以 read-only diagnostics mode 启动, 但不得 fallback 到另一个空 Library.
+初始化诊断模式不会创建 Library root、`.cache/` 或 SQLite index. Bootstrap 返回 canonical path 和 shell-safe exact init command, Browser 显示后等待用户显式初始化并重启 local service. 其他 Library API 返回 `503 LIBRARY_INITIALIZATION_REQUIRED`. 如果 Library invalid, server 可以以 read-only diagnostics mode 启动, 但不得 fallback 到另一个空 Library.
 
 ### Generation Runtime
 

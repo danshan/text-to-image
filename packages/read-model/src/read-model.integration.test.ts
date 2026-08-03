@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -43,6 +43,16 @@ async function writeObject(
 async function fixture(): Promise<{ root: string; assetSha256: string }> {
   const root = await mkdtemp(join(tmpdir(), "text-to-image-read-model-"));
   roots.push(root);
+  await writeFile(
+    join(root, "library.json"),
+    json({
+      schemaVersion: 1,
+      formatVersion: 1,
+      libraryId: "2d90beba-cf0d-4f6b-bfe6-4e285d7d0120",
+      createdAt: "2026-08-02T12:00:00.000Z",
+      hashAlgorithm: "sha256",
+    }),
+  );
   for (const directory of ["archive/commits", "curation/creations", "curation/images", ".cache"]) {
     await mkdir(join(root, ...directory.split("/")), { recursive: true });
   }
@@ -157,6 +167,17 @@ afterEach(async () => {
 });
 
 describe("ReadModel", () => {
+  it("does not create the Library root or cache when the manifest is missing", async () => {
+    const owner = await mkdtemp(join(tmpdir(), "text-to-image-read-model-missing-"));
+    roots.push(owner);
+    const root = join(owner, "library");
+    const model = new ReadModel(root);
+
+    await expect(model.open()).rejects.toThrow("Library manifest does not exist");
+    await expect(model.rebuild()).rejects.toThrow("Library manifest does not exist");
+    await expect(access(root)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("rebuilds gallery and provenance from committed records", async () => {
     const { root, assetSha256 } = await fixture();
     const model = new ReadModel(root);

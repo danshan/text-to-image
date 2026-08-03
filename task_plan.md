@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 5
+Phase 6
 
 ## Phases
 
@@ -50,22 +50,34 @@ Phase 5
 - [x] 提交最终交付说明与已知限制.
 - **Status:** completed
 
+### Phase 6: First-run Library Initialization
+
+- [x] 禁止缺少 manifest 的 read model 创建 Library 或 cache.
+- [x] 实现 Server initialization-required diagnostics mode.
+- [x] 在 Web bootstrap screen 显示 canonical path 与 exact init command.
+- [x] 补充 API、Read Model、Web 回归测试并同步正式文档.
+- **Status:** completed
+
 ## Remaining Design Questions
 
 无. Shared understanding 已确认, 当前按已接受设计实现 MVP.
 
 ## Errors Encountered
 
-| Error                                                                          | Attempt | Resolution                                               |
-| ------------------------------------------------------------------------------ | ------: | -------------------------------------------------------- |
-| Codex manual fetch failed because DNS was unavailable in the sandbox           |       1 | Re-ran the official helper with approved network access  |
-| Existing project Markdown used English prose against repository language rules |       1 | Rewrote glossary and ADR prose in Simplified Chinese     |
-| Documentation patch had malformed section markers                              |       1 | Split the change into smaller valid patch sections       |
-| Cross-file documentation patch used the wrong hunk context                     |       1 | Split updates by target file and validated each context  |
-| `tsx` IPC socket was denied by the Codex filesystem sandbox                    |       1 | Re-ran CLI and E2E verification with scoped approval     |
-| Initial dependency audit reported vulnerable static/Sharp versions             |       1 | Upgraded both packages and regenerated the lockfile      |
-| SPA navigation was incorrectly protected before token bootstrap                |       1 | Limited token enforcement to protected API routes        |
-| Full-scale FTS query repeatedly evaluated three subqueries                     |       1 | Materialized one FTS hit set and reused it               |
-| WebKit omitted links from the default macOS Tab focus ring                     |       1 | Split Tab-order and activation checks by browser         |
-| Server build emitted artifacts into referenced package source directories      |       1 | Removed generated files and corrected project references |
-| Documentation check traversed dependency and evaluation workspaces             |       1 | Excluded generated and dependency directories            |
+| Error                                                                          | Attempt | Resolution                                                 |
+| ------------------------------------------------------------------------------ | ------: | ---------------------------------------------------------- |
+| Codex manual fetch failed because DNS was unavailable in the sandbox           |       1 | Re-ran the official helper with approved network access    |
+| Existing project Markdown used English prose against repository language rules |       1 | Rewrote glossary and ADR prose in Simplified Chinese       |
+| Documentation patch had malformed section markers                              |       1 | Split the change into smaller valid patch sections         |
+| Cross-file documentation patch used the wrong hunk context                     |       1 | Split updates by target file and validated each context    |
+| `tsx` IPC socket was denied by the Codex filesystem sandbox                    |       1 | Re-ran CLI and E2E verification with scoped approval       |
+| Initial dependency audit reported vulnerable static/Sharp versions             |       1 | Upgraded both packages and regenerated the lockfile        |
+| SPA navigation was incorrectly protected before token bootstrap                |       1 | Limited token enforcement to protected API routes          |
+| Full-scale FTS query repeatedly evaluated three subqueries                     |       1 | Materialized one FTS hit set and reused it                 |
+| WebKit omitted links from the default macOS Tab focus ring                     |       1 | Split Tab-order and activation checks by browser           |
+| Server build emitted artifacts into referenced package source directories      |       1 | Removed generated files and corrected project references   |
+| Documentation check traversed dependency and evaluation workspaces             |       1 | Excluded generated and dependency directories              |
+| Web test used an unavailable `jest-dom` matcher                                |       1 | Replaced it with the repository's existing Chai assertions |
+| Playwright server could not create a `tsx` IPC socket in the sandbox           |       1 | Re-ran the E2E suite with scoped approval                  |
+| Archive adapter factory read the manifest before initialization mode           |       1 | Removed the eager read and covered the real factory path   |
+| npm workspace `cwd` was treated as the repository Git root                     |       1 | Resolve the nearest Git root before Library configuration  |

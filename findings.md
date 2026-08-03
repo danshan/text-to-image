@@ -37,6 +37,7 @@
 - MVP 不包含多用户、远程访问、云同步、Purge、语义搜索、实时协作、批量调度或桌面封装.
 - MVP 正式支持 macOS, Linux 为 best-effort, Windows 不支持; 实现仍避免不必要的 OS-specific 逻辑.
 - MVP 验收覆盖 Archive 不变量、故障注入、并发提交、Skill 与 Hook、Web UI 安全、规模基准和文档一致性.
+- 缺少 `library.json` 时不自动创建 Library. Server 只启动初始化诊断模式, Web 显示 explicit init command, 用户初始化后重启 local service.
 
 ## Research Findings
 
@@ -63,6 +64,8 @@
 - Read model rebuild 不能先关闭当前 connection. 新 SQLite 文件必须完成构建并成功打开后再 swap, 从而让并发 Gallery 请求持续读取旧快照.
 - TypeScript workspace 的 root no-emit typecheck 不等价于 package production build. Server 必须声明 project references, root build 必须显式覆盖 API contract、Archive、read model、CLI、Server 与 Web.
 - macOS WebKit 的默认 Tab focus ring 受系统 Full Keyboard Access 偏好影响. 自动化在 Chromium 验证 Tab 顺序, 在 WebKit 显式 focus 后验证同一 skip-link 的 keyboard activation.
+- Read Model 在验证 manifest 前创建 `.cache` 会把不存在的配置路径变成不完整 Library. manifest presence check 必须位于任何 SQLite 或 cache 写入之前, Server setup mode 不能调用 read model open/rebuild.
+- Initialization mode 必须从真实 process entrypoint 验证. 只测试 `createApp` 会遗漏 factory eager-read; npm workspace 还会把 process `cwd` 改为 workspace 目录, 因而 Server 默认路径必须通过 `.git` 向上解析, 不能直接使用 `process.cwd()`.
 
 ## Resources
 

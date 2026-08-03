@@ -365,6 +365,7 @@ export async function rebuildReadModel(
   onProgress?: (progress: IndexProgress) => void,
 ): Promise<string> {
   const root = resolve(libraryRoot);
+  await assertLibraryManifestPresent(root);
   const cacheDirectory = join(root, ".cache");
   await mkdir(cacheDirectory, { recursive: true });
   const finalPath = join(cacheDirectory, "index.sqlite");
@@ -402,6 +403,25 @@ export async function rebuildReadModel(
   await rm(`${temporaryPath}-wal`, { force: true });
   await rm(`${temporaryPath}-shm`, { force: true });
   return finalPath;
+}
+
+export async function assertLibraryManifestPresent(libraryRoot: string): Promise<void> {
+  const manifestPath = join(resolve(libraryRoot), "library.json");
+  let metadata;
+  try {
+    metadata = await lstat(manifestPath);
+  } catch (error) {
+    if (isObject(error) && error.code === "ENOENT") {
+      throw new TypeError(
+        `Library manifest does not exist at ${manifestPath}. Initialize the Library before opening the read model.`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new TypeError(`Library manifest must be a regular file: ${manifestPath}`);
+  }
 }
 
 export async function latestMarkerId(libraryRoot: string): Promise<string | null> {

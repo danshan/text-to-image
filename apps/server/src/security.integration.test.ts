@@ -1,5 +1,6 @@
 import type { ArchivePort } from "./shared/archive-port.js";
 import type { LibraryService } from "./library/library-service.js";
+import type { LibraryInitializationRequired } from "@text-to-image/api-contract";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createApp } from "./app.js";
@@ -45,10 +46,13 @@ function fakeService(): LibraryService {
   } as unknown as LibraryService;
 }
 
-async function appFixture(): Promise<{ app: FastifyInstance; token: string }> {
+async function appFixture(
+  initialization: LibraryInitializationRequired | null = null,
+): Promise<{ app: FastifyInstance; token: string }> {
   const created = await createApp({
     archive: fakeArchive(),
     service: fakeService(),
+    initialization,
     logLevel: "silent",
   });
   created.security.allowHost("127.0.0.1:4173");
@@ -66,6 +70,44 @@ afterEach(async () => {
 });
 
 describe("local service security", () => {
+  it("serves setup diagnostics while blocking Library APIs before initialization", async () => {
+    const initialization: LibraryInitializationRequired = {
+      required: true,
+      libraryRoot: "/tmp/missing image library",
+      initCommand: "npm run assetctl -- init --library '/tmp/missing image library'",
+    };
+    const { app, token } = await appFixture(initialization);
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/api/v1/bootstrap",
+      headers: { host: "127.0.0.1:4173" },
+    });
+    expect(bootstrap.statusCode).toBe(200);
+    expect(bootstrap.json()).toMatchObject({
+      initialization,
+      capabilities: { curation: false, recovery: false },
+    });
+
+    const ready = await app.inject({
+      method: "GET",
+      url: "/ready",
+      headers: { host: "127.0.0.1:4173" },
+    });
+    expect(ready.statusCode).toBe(503);
+    expect(ready.json()).toMatchObject({ status: "unavailable" });
+
+    const gallery = await app.inject({
+      method: "GET",
+      url: "/api/v1/gallery",
+      headers: { host: "127.0.0.1:4173", "x-session-token": token },
+    });
+    expect(gallery.statusCode).toBe(503);
+    expect(gallery.json()).toMatchObject({
+      code: "LIBRARY_INITIALIZATION_REQUIRED",
+      recoveryHint: initialization.initCommand,
+    });
+  });
+
   it("requires the rotating session token for Library reads", async () => {
     const { app, token } = await appFixture();
     const denied = await app.inject({

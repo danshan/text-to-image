@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { ApiClient, loadBootstrap } from "./api/client";
 import { AppShell } from "./components/app-shell";
-import { ErrorState, LoadingState } from "./components/states";
+import { ErrorState, LibraryInitializationState, LoadingState } from "./components/states";
 import { useApiResource } from "./hooks/use-api-resource";
 import { CreationDetailPage } from "./pages/creation-detail-page";
 import { CreationsPage } from "./pages/creations-page";
@@ -19,7 +19,8 @@ export default function App() {
   const location = useBrowserLocation();
   const bootstrap = useApiResource("bootstrap", (signal) => loadBootstrap(signal));
   const api = useMemo(
-    () => (bootstrap.data ? new ApiClient(bootstrap.data) : undefined),
+    () =>
+      bootstrap.data && !bootstrap.data.initialization ? new ApiClient(bootstrap.data) : undefined,
     [bootstrap.data],
   );
 
@@ -39,6 +40,13 @@ export default function App() {
     return (
       <main className="bootstrap-screen">
         <ErrorState error={bootstrap.error} onRetry={bootstrap.reload} />
+      </main>
+    );
+  }
+  if (bootstrap.data?.initialization) {
+    return (
+      <main className="bootstrap-screen">
+        <LibraryInitializationState initialization={bootstrap.data.initialization} />
       </main>
     );
   }

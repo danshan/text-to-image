@@ -18,6 +18,7 @@ import {
   type DraftPutRequest,
   type GalleryResponse,
   type HealthResponse,
+  type LibraryInitializationRequired,
 } from "@text-to-image/api-contract";
 import { ThumbnailCache, type GalleryQuery } from "@text-to-image/read-model";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -29,6 +30,7 @@ import { installSecurity, SecurityContext } from "./shared/security.js";
 export interface AppOptions {
   archive: ArchivePort;
   service: LibraryService;
+  initialization?: LibraryInitializationRequired | null;
   logLevel?: string;
   webRoot?: string;
 }
@@ -147,7 +149,44 @@ export async function createApp(
       .send({ code: "INTERNAL_ERROR", message: "An unexpected error occurred.", correlationId });
   });
 
+  app.addHook("preHandler", async (request, reply) => {
+    if (!options.initialization) return;
+    const pathname = request.url.split("?", 1)[0] ?? request.url;
+    if (
+      !pathname.startsWith("/api/v1/") ||
+      pathname === "/api/v1/bootstrap" ||
+      pathname === "/api/v1/health"
+    ) {
+      return;
+    }
+    return reply.status(503).send({
+      code: "LIBRARY_INITIALIZATION_REQUIRED",
+      message: `Library manifest does not exist at ${options.initialization.libraryRoot}.`,
+      details: { libraryRoot: options.initialization.libraryRoot },
+      recoveryHint: options.initialization.initCommand,
+      correlationId: request.id,
+    });
+  });
+
   const health = async (): Promise<HealthResponse> => {
+    if (options.initialization) {
+      return {
+        status: "unavailable",
+        apiVersion: API_VERSION,
+        libraryFormatVersion: null,
+        index: {
+          available: false,
+          latestArchiveMarker: null,
+          lastIndexedMarker: null,
+          lagCount: 0,
+        },
+        recoveryCount: 0,
+        diagnostics: [
+          `Library manifest does not exist at ${options.initialization.libraryRoot}.`,
+          `Initialize it with: ${options.initialization.initCommand}`,
+        ],
+      };
+    }
     const [index, diagnostics, recovery] = await Promise.all([
       options.service.readModel.status(),
       options.archive.diagnostics(),
@@ -184,9 +223,10 @@ export async function createApp(
       apiVersion: API_VERSION,
       libraryFormatVersion: options.archive.formatVersion,
       sessionToken: security.sessionToken,
+      initialization: options.initialization ?? null,
       capabilities: {
-        curation: !options.archive.readOnly,
-        recovery: true,
+        curation: !options.initialization && !options.archive.readOnly,
+        recovery: !options.initialization,
         generationFromWeb: false,
       },
     };

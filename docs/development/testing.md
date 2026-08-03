@@ -2,7 +2,7 @@
 title: Testing Strategy
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -81,6 +81,7 @@ JSON examples embedded in正式文档必须被提取并解析; 标记为 illustr
 - Commit Marker publication 和 reader visibility.
 - uncommitted final object detection.
 - cache delete/rebuild.
+- missing manifest does not create Library root、`.cache/` 或 SQLite index.
 - external Library absolute path.
 - root symlink canonicalization 与 internal symlink rejection.
 - Curation/Draft atomic update conflict.
@@ -167,6 +168,7 @@ Fastify injection 或 loopback server 覆盖:
 - search/filter/sort combination.
 - Curation expected revision conflict.
 - read-only degraded mode.
+- initialization-required bootstrap、`503` API guard 与 exact init command.
 - invalid Host、Origin、token 与 CORS preflight.
 - path traversal、encoded traversal、invalid hash 和 arbitrary path parameters.
 - session token rotates on restart.
@@ -177,6 +179,7 @@ Fastify injection 或 loopback server 覆盖:
 Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow:
 
 - Gallery loading、empty、no-results、error 和 degraded states.
+- first-run initialization screen 显示 resolved path 与 exact init command, 且不请求 Gallery.
 - filter URL round-trip 与 browser back/forward.
 - Gallery -> Image -> Generation -> Creation provenance navigation.
 - Prompt branch selection 与 diff labels.

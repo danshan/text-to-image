@@ -750,6 +750,30 @@ kbd {
 .state-panel--error {
   border-left: 3px solid var(--status-danger);
 }
+.state-panel--setup {
+  border-left: 3px solid var(--status-warning);
+}
+.setup-detail {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.setup-detail code {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+.setup-command {
+  max-width: 100%;
+  padding: 14px;
+  margin: 0;
+  overflow-x: auto;
+  color: var(--text-primary);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-default);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .registration-mark {
   position: absolute;
   top: 18px;

@@ -238,6 +238,5 @@ export function createArchiveAdapter(options: {
     gitRoot: options.gitRoot,
     ...(options.libraryArgument ? { cliPath: options.libraryArgument } : {}),
   });
-  readLibraryManifest(resolved.libraryRoot);
   return new LocalArchiveAdapter(resolved.libraryRoot);
 }

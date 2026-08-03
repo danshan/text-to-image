@@ -17,6 +17,8 @@ npm run dev
 
 开发 UI 位于 `http://127.0.0.1:5173`. Fastify service 只监听 loopback. Web UI 不会启动 Codex; 图片生成必须在 Codex 中显式调用 `$generate-and-archive`.
 
+`npm run dev` 不会隐式初始化 Library. 如果配置路径缺少 `library.json`, Server 只启动初始化诊断模式, Web UI 显示解析后的路径和可直接执行的 `assetctl init` 命令. 此过程不会创建 Library 目录、`.cache/` 或 SQLite index.
+
 ## External Library
 
 可以把 Library 放在仓库外. CLI 参数优先级最高:

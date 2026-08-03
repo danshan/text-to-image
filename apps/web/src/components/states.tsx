@@ -1,4 +1,5 @@
 import { ApiError } from "../api/client";
+import type { LibraryInitializationRequired } from "../types";
 import type { ReactNode } from "react";
 
 export function LoadingState({ label = "Loading library records" }: { label?: string }) {
@@ -40,6 +41,31 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
           </button>
         )}
       </div>
+    </section>
+  );
+}
+
+export function LibraryInitializationState({
+  initialization,
+}: {
+  initialization: LibraryInitializationRequired;
+}) {
+  return (
+    <section className="state-panel state-panel--setup" role="status">
+      <span className="eyebrow">First-run setup</span>
+      <h1>Initialize the local Library</h1>
+      <p>
+        The configured Library does not contain <code>library.json</code>. No directory or cache was
+        created automatically.
+      </p>
+      <div className="setup-detail">
+        <span>Resolved Library path</span>
+        <code>{initialization.libraryRoot}</code>
+      </div>
+      <pre className="setup-command">
+        <code>{initialization.initCommand}</code>
+      </pre>
+      <p>Run this command in the repository, then restart the local service and reload the page.</p>
     </section>
   );
 }

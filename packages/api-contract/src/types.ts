@@ -11,10 +11,17 @@ export interface ApiProblem {
   correlationId: string;
 }
 
+export interface LibraryInitializationRequired {
+  required: true;
+  libraryRoot: string;
+  initCommand: string;
+}
+
 export interface BootstrapResponse {
   apiVersion: typeof API_VERSION;
   libraryFormatVersion: number | null;
   sessionToken: string;
+  initialization: LibraryInitializationRequired | null;
   capabilities: {
     curation: boolean;
     recovery: boolean;

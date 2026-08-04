@@ -76,6 +76,7 @@ npm run docs:check
 
 ## Documentation
 
+- [用户使用手册](./docs/user/guide.md)
 - [领域词汇](./CONTEXT.md)
 - [文档索引](./docs/README.md)
 - [文档规范](./docs/standards/documentation.md)

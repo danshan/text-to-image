@@ -20,6 +20,7 @@
 - `CONTEXT.md`: 纯领域 glossary, 不写实现细节.
 - `docs/README.md`: 正式文档清单、状态和所有权.
 - `docs/standards/documentation.md`: 文档分类、格式、生命周期和完成标准.
+- `docs/user/guide.md`: 面向普通用户的图片生成、参考图、Prompt 迭代、整理与恢复手册. 当前为 `accepted`.
 - `docs/product/requirements.md`: 产品目标、用例、范围和验收标准. 当前为 `accepted`.
 - `docs/design/system-architecture.md`: 运行时组件、所有权、依赖、数据流和安全边界. 当前为 `accepted`.
 - `docs/design/asset-library.md`: 文件夹 Schema、身份、引用和演进规则. 当前为 `accepted`.

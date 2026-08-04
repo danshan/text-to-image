@@ -2,7 +2,7 @@
 title: Documentation Standard
 status: accepted
 owner: project
-last_updated: 2026-08-02
+last_updated: 2026-08-04
 ---
 
 # 文档规范
@@ -22,6 +22,7 @@ last_updated: 2026-08-02
 | Entry point           | `README.md`         | 项目概览、状态与导航                   |
 | Repository rules      | `AGENTS.md`         | 工作约束、必读文档与路径地图           |
 | Domain glossary       | `CONTEXT.md`        | 领域术语及禁用同义词, 不含实现细节     |
+| User guide            | `docs/user/`        | 面向普通用户的操作步骤、示例与故障处理 |
 | Product requirements  | `docs/product/`     | 用例、范围、非目标与验收标准           |
 | Design                | `docs/design/`      | 数据模型、协议、状态机、边界与恢复策略 |
 | Development           | `docs/development/` | 环境、命令、测试、发布与故障排查       |
@@ -58,6 +59,8 @@ related:
 设计文档至少包含 `Context`, `Invariants`, `Model`, `Flows`, `Failure Handling`, `Compatibility`, `Validation`.
 
 研发文档至少包含 `Prerequisites`, `Commands`, `Configuration`, `Verification`, `Troubleshooting`.
+
+用户文档必须从用户目标出发, 说明当前产品边界, 提供可复制示例、界面截图、常见失败处理和可执行检查表. 不要求读者理解内部 Schema、事务或源码结构.
 
 标题可以使用 English canonical names, 正文必须使用简体中文和 English punctuation. 代码块、JSON 字段、命令、标识符和文件名必须使用 English.
 

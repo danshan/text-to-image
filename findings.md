@@ -81,6 +81,14 @@
 - 现有 config 只允许 `TEXT_TO_IMAGE_HOST=127.0.0.1`, 且 development Origin 只有单值. 实现需要把 listen host parsing 与 endpoint discovery 提取为可单测的纯边界, 同时保留原环境变量兼容入口.
 - macOS `networkInterfaces()` 会返回需要 zone identifier 的 scoped IPv6 link-local address. 缺少 zone 的 Browser URL 不可用, 因而 wildcard discovery 只发布 `scopeid = 0` 的 IPv6 address.
 
+## Phase 12 Documentation Findings
+
+- 普通用户主路径必须明确分开两个操作面: Codex 负责显式生成和归档, Web UI 负责 Draft 编辑, 历史比较, provenance 查看和 Curation.
+- `Files mentioned` 是会话呈现, 不是持久输入契约. 只有宿主同时提供可读取本地路径或原始 bytes 时, Session Image 才能导入 Library 并成为 Reference Image.
+- 参考图教学不能只说明如何附图. 用户还必须明确 `subject`, `style`, `composition`, `palette` 或带 guidance 的 `other`, 否则系统不应猜测用途.
+- 面向用户的 Prompt 迭代应围绕单变量 change instruction, immutable Revision, independent Generation, Restore to Draft 和 explicit replay 展开, 避免把随机 variant 与 Prompt 修改混为一谈.
+- 正式 Web UI 截图不应泄漏用户运行时 Library. 使用通过共享 writer 构建并完整校验的临时合成 Library, 可以同时保留真实界面和真实 provenance 关系.
+
 ## Research Findings
 
 - Codex 官方手册说明 `AGENTS.md` 是持久仓库指令, 仓库内较近层级覆盖较远层级.

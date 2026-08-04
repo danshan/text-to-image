@@ -238,6 +238,31 @@
   - `npm run fixtures:validate`: 2 of 2 fixtures matched outside the sandbox.
   - `git diff --check`: passed.
 
+### Phase 12: End-user Documentation
+
+- **Status:** completed
+- **Started:** 2026-08-04
+- **Completed:** 2026-08-04
+- 已完成:
+  - 审计正式文档, 确认现有入口只有产品, 设计和开发资料, 缺少面向普通用户的完整操作手册.
+  - 新增 `docs/user/guide.md`, 说明首次启动, Creation, 纯 Prompt 生成, Reference roles, 稳定本地路径导入, Prompt 迭代, variant, replay, Curation, failure 和 Recovery.
+  - 明确当前 Web UI 不启动生成, `Files mentioned` 只有在宿主提供可读取本地路径或原始 bytes 时才能进入 Reference ingress.
+  - 使用 ImageGen 生成 `1672x941` PNG 教学示意图, 并通过 `view_image` 检查角色身份一致性, 构图和无文字要求.
+  - 通过共享 CLI 在临时目录创建无私人内容的演示 Library, 导入参考图, 完成包含 Prompt Revision, Reference relation 和 Output 的真实 Generation, full validation 通过.
+  - 启动隔离的 loopback Web UI, 使用浏览器控制实际打开 Gallery, Creation 和 Generation 页面, 检查 DOM 后保存 3 张截图并逐张视觉检查.
+  - 更新 README, AGENTS, 文档规范, 文档索引和任务计划.
+- 错误:
+  - Sandbox 拒绝 `tsx` IPC socket, 使用限定 approval 在临时演示 Library 中重跑 CLI.
+  - 默认开发 Server 的 `4174` 端口已被现有进程占用, 改用独立 production-like Server 的 `4180` 端口制作截图.
+  - 浏览器 full-page capture 在长页面底部重复 sticky shell, 对精确截图文件执行裁剪并重新视觉检查.
+- 验证:
+  - 临时演示 Library `assetctl validate --full`: passed, 6 committed records, 4 commit markers, 0 diagnostics.
+  - `npm run build -w @text-to-image/web`: passed, 56 modules transformed.
+  - `npm run docs:check`: passed, 33 Markdown files and 11 ADRs.
+  - `npm run format:check`: passed.
+  - `git diff --check`: passed.
+  - 文档图片存在性, MIME 和尺寸检查: passed, 1 PNG 示意图和 3 JPEG Web UI screenshots.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |
@@ -254,7 +279,7 @@
 | Warm Gallery query                  | p95 <= 200 ms                                                                       | 51.92 ms across 100 queries                                                                    | pass   |
 | Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                                 | pass   |
 | External Library                    | Resolver、Generation、Commit、validate and index rebuild work outside repo          | Temporary external Library reached lagCount 0 and full validation passed                       | pass   |
-| Documentation structural validation | Links、JSON fences、frontmatter、ADR sequence、punctuation and whitespace are valid | 31 Markdown files and 10 ADRs passed                                                           | pass   |
+| Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 33 Markdown files and 11 ADRs passed                                                           | pass   |
 | Library selection and merge         | Config persistence、dry-run、atomic apply、conflict and recovery are correct        | Archive and read model integration coverage passed                                             | pass   |
 
 ## Error Log
@@ -288,10 +313,10 @@
 
 ## 5-Question Reboot Check
 
-| Question             | Answer                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------- |
-| Where am I?          | Phase 11 completed                                                                                        |
-| Where am I going?    | Hand off the completed Session Image ingress contract and implementation                                  |
-| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                             |
-| What have I learned? | See `findings.md`                                                                                         |
-| What have I done?    | Added Session Image source inspection, automatic import workflow, stable errors, tests, and documentation |
+| Question             | Answer                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| Where am I?          | Phase 12 completed                                                                                      |
+| Where am I going?    | Publish the end-user guide and visual documentation                                                     |
+| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                           |
+| What have I learned? | See `findings.md`                                                                                       |
+| What have I done?    | Added the end-user guide, generated overview image, real Web UI screenshots, navigation, and validation |

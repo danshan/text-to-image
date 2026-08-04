@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 11
+Phase 12
 
 ## Phases
 
@@ -125,9 +125,19 @@ Phase 11
 4. 多张 Session Image 先全部预检; 任一失败时不创建 Generation transaction, 不调用图片工具, 不静默丢弃输入.
 5. opaque session handle 在宿主没有提供原始 bytes 或路径时 fail closed, 并报告 `SESSION_IMAGE_NOT_MATERIALIZED`.
 
+### Phase 12: End-user Documentation
+
+- [x] 审计现有文档, 确认缺少面向普通用户的完整操作手册.
+- [x] 编写图片生成、参考图导入、Prompt 迭代、结果整理和失败恢复说明.
+- [x] 使用 ImageGen 生成无文字 PNG 教学示意图.
+- [x] 使用不含私人内容的临时演示 Library 制作真实 Web UI 截图.
+- [x] 更新 README、AGENTS、文档规范、文档索引和执行记录.
+- [x] 完成文档、格式、链接与 Git 差异验证.
+- **Status:** completed
+
 ## Remaining Design Questions
 
-无. Phase 11 按已确认的 Session Image ingress contract 实现.
+无. Phase 12 用户手册已经完成并通过验证.
 
 ## Errors Encountered
 
@@ -160,3 +170,6 @@ Phase 11
 | Lint rejected an `any` matcher nested inside an unknown CLI payload assertion  |       1 | Narrowed the payload explicitly and asserted command membership  |
 | Direct execution of CLI dist could not resolve workspace source `.js` imports  |       1 | Use the documented root `npm run assetctl -- ...` contract       |
 | Fixture validation could not create the `tsx` IPC socket in the sandbox        |       1 | Re-run the root fixture contract outside the sandbox             |
+| Documentation demo CLI could not create the `tsx` IPC socket in the sandbox    |       1 | Re-ran scoped temporary Library commands outside the sandbox     |
+| Development Server port `4174` was already occupied during screenshot setup    |       1 | Used an isolated production-like Server on loopback port `4180`  |
+| Full-page screenshots repeated the sticky shell near the bottom                |       1 | Cropped exact documentation assets and visually rechecked them   |

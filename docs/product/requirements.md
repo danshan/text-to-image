@@ -143,10 +143,11 @@ related:
 - `FR-GEN-015`: Reference roles 只从用户明确措辞或已保存 selection 解析; 意图不足时必须在 prepare 前询问, 不得根据图片内容设置隐式默认 role.
 - `FR-GEN-016`: 只有 opaque session handle 且宿主无法提供原始 bytes 或可读本地 path 时, Skill 必须以 `SESSION_IMAGE_NOT_MATERIALIZED` fail closed, 不得通过未归档会话输入绕过 provenance.
 - `FR-GEN-017`: Skill 必须通过单个只读 Generation Preflight 固定 canonical Library root, 返回 capability、recovery warning、Draft snapshot 与全部 Session Image inspection 结果; Preflight 不导入图片或创建 Generation transaction.
-- `FR-GEN-018`: 所有结构化 stdin command 必须支持以首个 `LF` 或 EOF 结束的单一 JSON value, payload 上限为 1 MiB; Prompt 不得进入 argv、process list、shell history 或临时脚本.
+- `FR-GEN-018`: 所有结构化 stdin command 必须支持以首个 `LF` 或 EOF 结束的单一 JSON value, payload 上限为 1 MiB; Prompt 不得进入 argv、process list、shell history 或临时脚本. CLI 必须在 TTY 下自治进入并恢复 non-canonical/no-echo raw mode.
 - `FR-GEN-019`: Prepare 归档的 effective Prompt 与传入图片工具的 Prompt 必须 UTF-8 byte-identical. Skill 必须在 `mark-invocation-started` 前验证 SHA-256, 且不得在 Prepare 后重新生成或改写 Prompt.
-- `FR-GEN-020`: Generation happy path 使用高层 workflow commands 编排现有状态机 primitives; Recovery、fault injection 与精确状态检查继续使用低层命令, 两者不得形成第二套 Archive 写入逻辑.
-- `FR-GEN-021`: Generation capture 必须返回可供 `view_image` 检查的 staged Output path, 不要求额外读取完整 recovery request 或扫描 staging.
+- `FR-GEN-020`: Generation happy path 必须收敛为只读 `preflight`、高层 `begin`、built-in image generation 与高层 `finalize`. Begin 复用 import、prepare、Prompt hash gate 与 mark primitives; Finalize 复用 capture、terminal finalize、commit 与 incremental index primitives. Recovery、fault injection 与精确状态检查继续使用低层命令, 两者不得形成第二套 Archive 写入逻辑.
+- `FR-GEN-021`: built-in result 已在会话中可见时, 视觉质量检查不得阻塞 Commit Marker 与 index ready. 图片工具返回可解析的本地 Output 后, Skill 的下一动作必须启动高层 Finalize; 只有结果不可见或需要验证 committed bytes 时, 才在 commit 后读取 Archive Output.
+- `FR-GEN-022`: Workspace Ready 的普通 Generation 只加载 Generation Skill contracts 与一次 Preflight snapshot. 完整项目计划、设计与进度文档只用于修改项目行为或异常恢复, 不属于每次生成前置条件.
 
 ### Transaction and Recovery
 
@@ -193,8 +194,8 @@ related:
 - `NFR-006`: 应用在无外部字体和无云服务时可启动并使用已有 Library.
 - `NFR-007`: Web UI 第一版只承诺桌面 viewport `1024x768` 及以上; 使用固定 200 px sidebar、紧凑 page header、统一可读字号和不产生横向 overflow 的 detail 两栏布局.
 - `NFR-008`: Non-loopback listener 只面向 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺. Wildcard bind 只允许启动时发现的 usable active interface IP literal, interface 变化后必须重启.
-- `NFR-009`: warm Generation Workflow 的用户端到端耗时目标为图片模型耗时加不超过 30 秒非模型开销; `request -> invocation_started` p95 不超过 20 秒, `tool_returned -> committed and index-ready` p95 不超过 10 秒.
-- `NFR-010`: 用户体验 SLO 与仓库执行 SLO 分层记录并通过同一个 `workflowRunId` 关联. 仓库计时不得代替 Codex UI 端到端计时.
+- `NFR-009`: Workspace Ready 后, 新 Codex task 的第一次 Generation 也必须满足用户端到端耗时为图片模型耗时加不超过 30 秒可控非模型开销; `request -> invocation_started` p95 不超过 20 秒, `tool_returned -> committed and index-ready` p95 不超过 10 秒.
+- `NFR-010`: 用户体验 SLO 与仓库执行 SLO 分层记录并通过同一个 `workflowRunId` 关联. Codex UI duration 是用户端到端权威值; 未暴露时结果保持 `unknown`, 仓库计时不得替代或推测.
 - `NFR-011`: Generation Workflow 必须显示真实阶段与累计耗时. 没有 provider progress event 时不得编造百分比或 ETA; 只有 Commit Marker 有效且 index ready 后才能报告完成.
 - `NFR-012`: 正常路径必须增量投影尚未处理的 Commit Marker 并原子更新 `last_indexed_marker`. 全量 index rebuild 只用于 cache 缺失、Schema 变化、corruption 或显式 recovery.
 - `NFR-013`: Workflow performance telemetry 不属于 immutable Archive, 不得包含 Prompt、Reference guidance、文件路径、provider transcript 或 opaque handle. Telemetry failure 不得影响 Generation commit.

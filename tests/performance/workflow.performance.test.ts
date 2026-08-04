@@ -5,13 +5,11 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, test } from "vitest";
 import { WorkflowProgress } from "@text-to-image/domain";
 import {
-  captureGenerationOutput,
+  beginGeneration,
   createCreation,
   finalizeGenerationHappyPath,
   initLibrary,
-  markInvocationStarted,
   preflightGeneration,
-  prepareGeneration,
   validateLibrary,
 } from "@text-to-image/archive";
 import { ReadModel } from "@text-to-image/read-model";
@@ -56,21 +54,21 @@ describe("deterministic fake generation workflow SLO", () => {
         });
         expect(preflight.sessionImages[0]?.assetSha256).toBeDefined();
         progress.stage("Prompt frozen");
-        const prepared = prepareGeneration(libraryRoot, creation.creation.id, {
+        const prepared = beginGeneration(libraryRoot, creation.creation.id, {
           prompt: "A deterministic fake generation fixture.",
           changeInstruction: "",
           references: [],
           tool: { name: "fake.generator", model: "deterministic-v1", parameters: {} },
         });
-        markInvocationStarted(libraryRoot, prepared.transactionId, prepared.promptSha256);
         progress.stage("Waiting for image model");
         const toolReturnedAt = performance.now();
 
-        captureGenerationOutput(libraryRoot, prepared.transactionId, generatedPath);
-        progress.stage("Output captured");
         const finalized = finalizeGenerationHappyPath(libraryRoot, prepared.transactionId, {
+          outputSources: [generatedPath],
           toolResult: { model: "deterministic-v1", parameters: {}, outputCount: 1 },
         });
+        expect(finalized.captured).toHaveLength(1);
+        progress.stage("Output captured");
         expect(finalized.committed).toBe(true);
         progress.stage("Archive committed");
         const indexResult = await readModel.catchUp();

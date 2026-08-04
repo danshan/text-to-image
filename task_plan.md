@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 13
+Phase 14
 
 ## Phases
 
@@ -166,6 +166,40 @@ Phase 13
 3. CLI orchestration: 增加只读 Preflight 与高层 post-tool happy path, 保留低层 recovery commands.
 4. Skill: 单次构造 effective Prompt, transaction-scoped storage, hash gate、真实 progress 与双层 SLO report.
 5. Verification: fake generator performance gate、fault injection、release-scale dataset、real model observation 与 docs cross-check.
+
+### Phase 14: End-to-end Generation Workflow Optimization
+
+- [x] 复盘真实 Generation task 的 `12m17s` Codex UI 端到端耗时, 定位 PTY canonical input、过度前置阅读、串行工具轮次与不完整 telemetry.
+- [x] 通过 `$grill-with-docs` 确认端到端责任边界、Workspace Ready、TTY ownership、双源计时、最小确定输入、commit 后检查、高层 command 与验证预算.
+- [x] 将产品需求、Generation Workflow 与测试策略切回 `draft`, 同步 glossary 与实施契约.
+- [x] 实现 CLI-owned TTY raw mode 与状态恢复.
+- [x] 实现只读 `preflight`、高层 `begin`、built-in `image_gen`、高层 `finalize` 的 happy path.
+- [x] 修正 `workflowRunId` 双源关联、真实 repository spans 与 `unknown` UI SLO 语义.
+- [x] 更新 Generation Skill 的 Workspace Ready fast path 与 commit 后检查规则.
+- [x] 补充 long Prompt TTY、high-level command、telemetry、performance 与 Skill eval 测试.
+- [x] 执行 deterministic verification 与一次真实 Workspace Ready Generation observation.
+- [x] 记录实测结果, 完成交叉检查并恢复正式文档为 `accepted`.
+- **Status:** completed
+- **Completed:** 2026-08-04
+
+#### Verification Summary
+
+- deterministic fake workflow 运行 12 次, non-model overhead p95 为 `256.26ms`.
+- 真实 TTY smoke 一次接收 `5,135` bytes, 输入未回显, raw mode 自动恢复.
+- 真实 Workspace Ready Generation 从 Preflight 到 Finalize return 为 `226.28s`: pre-tool `40.62s`, provider `152.86s`, post-tool `32.80s`; Archive telemetry 到 index ready 为 `225.54s`.
+- 相比原始 Codex UI `12m17s` observation, 相同 Creation 与 subject Reference 的 repository-observed workflow 缩短约 `8m31s`. Codex UI authoritative duration 未暴露, user-facing SLO 保持 `unknown`.
+- 单次真实 observation 的 pre-tool 与 post-tool 分别未满足 `20s` 与 `10s` 目标. 该样本包含 smoke harness 的一次本地计时错误和 Finalize 前 commentary; Skill 已收紧为 tool 返回本地 Output 后下一动作立即启动 Finalize. 单样本不用于宣称 provider 或 workflow p95.
+
+#### Confirmed Contract
+
+1. Generation Workflow 的正式性能边界从用户明确请求开始, 到 Archive committed、index ready 且最终回复完成后结束.
+2. Workspace Ready 不依赖当前 Codex task 的历史; 第一次明确 Generation 也必须满足图片模型耗时加不超过 30 秒可控非模型开销.
+3. CLI 的共享 stdin reader 在 TTY 下自治管理 raw mode 并恢复原状态; Skill 不依赖 `stty` 或额外 Wrapper.
+4. 普通 Generation 只加载 Skill contracts 与一次 Preflight snapshot; 完整项目文档只用于设计、实现或异常恢复.
+5. happy path 收敛为 `preflight -> begin -> image_gen -> finalize`; 高层 commands 复用现有 Archive primitives, 低层 commands 保留用于 recovery 与 fault injection.
+6. built-in result 已在会话中可见时, 视觉检查不阻塞 commit; 必要的 Archive 复查在 commit 后执行.
+7. 同一 `workflowRunId` 关联 Codex UI 权威端到端耗时与 repository spans. 未观测 UI duration 保持 `unknown`, 不从 repository timings 推测.
+8. deterministic fake workflow 至少运行 12 次; 完成后执行一次真实 Workspace Ready Generation observation, 不以单个真实样本宣称 provider p95.
 
 ## Remaining Design Questions
 

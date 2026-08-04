@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "Use $generate-and-archive for Creation f69e912d-c504-4278-89d5-4558ba452df0. Generate two portrait variants from its current draft without references.",
-      "expected_output": "Two separate built-in image generation calls are prepared, captured, committed, and reported as two immutable Generations.",
+      "expected_output": "Two separate built-in image generation calls are begun, finalized, committed, and reported as two immutable Generations.",
       "files": [],
       "expectations": [
         "The agent checks capabilities, resolves the Library through assetctl, and reports pending recovery work.",
-        "Each variant uses a separate prepare, invocation marker, image_gen call, capture, finalize, and commit sequence.",
+        "Each variant uses one preflight snapshot and a separate begin, image_gen, finalize, and commit sequence.",
         "Prompt and tool-result payloads are sent through process stdin rather than argv or shell pipelines.",
         "The final report distinguishes tool success from committed Archive success."
       ]
@@ -19,9 +19,9 @@
       "expected_output": "The committed Generation preserves the multi-role Reference Image relation and uses the canonical reference path returned by prepare.",
       "files": [],
       "expectations": [
-        "The prepare request records both subject and composition roles with the exact guidance.",
-        "The image_gen call receives referenced_image_paths returned by assetctl rather than an arbitrary input path.",
-        "The agent inspects and archives every returned output even when it observes a quality problem.",
+        "The begin request records both subject and composition roles with the exact guidance.",
+        "The image_gen call receives referenced_image_paths returned by generation begin rather than an arbitrary input path.",
+        "The agent archives every returned output before any optional post-commit inspection, even when it observes a quality problem.",
         "No edit mode, mask, fallback API, or invented model parameter is used."
       ]
     },
@@ -40,13 +40,13 @@
     {
       "id": 4,
       "prompt": "Use $generate-and-archive for Creation f69e912d-c504-4278-89d5-4558ba452df0. Use the two images attached in this session as subject and palette references, then generate one image.",
-      "expected_output": "Both materialized Session Images are inspected before either is imported, imported through the fixed canonical Library, and converted into committed Reference Image relations before generation.",
+      "expected_output": "Both materialized Session Images are inspected by preflight, imported by generation begin through the fixed canonical Library, and converted into committed Reference Image relations before generation.",
       "files": [],
       "expectations": [
         "The agent fixes one canonical Library root for the entire workflow.",
         "The agent inspects every materialized Session Image before importing any of them.",
         "The agent stops without preparing or invoking generation if any Session Image is missing, unreadable, unsupported, invalid, or not materialized.",
-        "The agent imports each validated source with assetctl, verifies the returned hash, and uses the resulting committed asset identity in generation prepare.",
+        "The agent sends each validated source and expected hash to generation begin, verifies the returned identity, and uses the committed asset in the prepared Generation.",
         "The agent preserves explicit subject and palette roles without guessing roles from image content."
       ]
     }

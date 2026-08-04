@@ -290,6 +290,38 @@
   - `npm run docs:check`: passed, 34 Markdown files and 12 ADRs; formal Markdown statuses restored to `accepted`.
   - `git diff --check`: passed.
 
+### Phase 14: End-to-end Generation Workflow Optimization
+
+- **Status:** completed
+- **Started:** 2026-08-04
+- **Completed:** 2026-08-04
+- 已完成:
+  - 使用 `$grill-with-docs` 逐项确认完整端到端性能边界、Workspace Ready、CLI TTY ownership、双源 telemetry、最小确定输入、commit 后检查、高层 Begin/Finalize 与验证预算.
+  - 在 `CONTEXT.md` 定义 `Workspace Ready` 与 `Workflow Telemetry`, 并收紧 `Generation Workflow` 的端到端边界. ADR 0012 已覆盖 telemetry 不进入 Archive, 因此没有新增重复 ADR.
+  - CLI shared stdin reader 在 TTY 下保存原 `isRaw`, 自治启用 raw mode, 并在成功、失败和 cleanup 时恢复. Skill 不再依赖 `stty` 或 Wrapper.
+  - 新增高层 `generation begin`, 复用 Session Image importer、Prepare、Prompt hash gate 与 Mark primitives. Session Image 在 Preflight 后变化时返回 `SESSION_IMAGE_CHANGED`, 已提交 import 保留.
+  - 扩展高层 `generation finalize`, 直接接收 local output sources, 复用 Capture、terminal finalize、Commit Marker 与 incremental index catch-up.
+  - `workflowRunId` 关联 repository spans 与 Codex UI duration. UI duration 未暴露时, `nonModelOverheadMs` 与端到端 SLO 保持 `unknown`, 不使用 repository timings 推测.
+  - Generation Skill 的普通路径收敛为 `preflight -> begin -> image_gen -> finalize`, 只加载 Skill contracts 与一次 Preflight snapshot. built-in result 可见时不在 commit 前重复检查; tool 返回本地 Output 后下一动作立即启动 Finalize.
+  - 更新 CLI contract、Skill eval、产品需求、Generation Workflow、测试策略和文档索引.
+- 错误:
+  - 初始 Phase 14 test 假设 Commit Marker 文件名顺序等于提交时间; 改为按 operation 查找目标 marker.
+  - `/usr/bin/script` 无法在 Vitest socket stdin 上执行 `tcgetattr`; `/usr/bin/expect` PTY smoke 没有按预期交付 `LF`. 删除不可靠自动化, 改用 raw-mode unit test 与真实 Codex PTY smoke.
+  - Phase 14 stream fake 在 root typecheck 中因 `isRaw` 的 `this` 类型过窄失败; 显式收窄 receiver 后通过.
+  - Skill contract test 仍断言旧 wording `全部 inspection 成功后`; 更新为新 fail-closed contract 后通过.
+  - 第一次真实 PTY helper 使用 top-level await, `tsx -e` 的 CJS output 不支持; 改用真实 `assetctl generation preflight` smoke.
+  - inline `tsx -e` helper 被 Archive guard 拒绝为不可证明安全的 compound shell; 使用允许的 root CLI contract 后通过.
+  - 真实 Generation Begin 已启动后, smoke orchestration 用 `TextEncoder` 统计 payload bytes, 但 tool isolate 未提供该 global. 已保留 session 并发送原 payload, transaction 正常完成; 该额外编排时间保留在 pre-tool observation 中.
+- 验证:
+  - `npm test`: passed, root Vitest 3 files / 11 tests, Hook and Skill 31 tests, Web 10 files / 23 tests.
+  - `npm run test:integration`: passed, 6 files / 46 tests.
+  - `npm run test:performance:smoke`: passed, 2 files / 3 tests. 12 次 fake workflow 的 p95 为 pre-tool `84.01ms`, post-tool `172.25ms`, non-model overhead `256.26ms`.
+  - 真实 PTY smoke 接收 `5,135` bytes, 未回显 payload, command exit `0`.
+  - `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run docs:check`, `npm run fixtures:validate` 与 `git diff --check`: passed.
+  - 真实 Workspace Ready Generation committed: workflow `716715d7-f88c-4159-a4b0-ac5108f1c710`, Generation `2fecfcaa-f9bb-40d2-b1bb-53b84f078128`, Output SHA-256 `fd9ecd802e70e86e77ad9d35f846377e6a5395704e205d44dccea7d1cb1f3b95`, PNG `1536x1024`, index `ready`.
+  - 真实 observation 从 Preflight 到 Finalize return 为 `226.28s`: pre-tool `40.62s`, provider `152.86s`, post-tool `32.80s`. Archive telemetry 到 index ready 为 `225.54s`. 相比原始 `12m17s` 缩短约 `8m31s`.
+  - 真实单样本 pre-tool 和 post-tool 未达到 `20s/10s`; Codex UI authoritative duration 未暴露, user-facing SLO 为 `unknown`. 不以该样本宣称 provider 或 workflow p95.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |
@@ -298,15 +330,16 @@
 | Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                                      | pass   |
 | Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 53-module Web build passed                  | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 29 Hook/Skill tests and 23 Web tests passed                                                    | pass   |
-| Integration                         | Archive、read model and HTTP security pass                                          | 4 files, 34 tests passed                                                                       | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 3 root files / 11 tests, 31 Hook/Skill tests and 23 Web tests passed                           | pass   |
+| Integration                         | Archive、read model and HTTP security pass                                          | 6 files, 46 tests passed                                                                       | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
 | Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
 | Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                                      | pass   |
 | Warm Gallery query                  | p95 <= 200 ms                                                                       | 51.92 ms across 100 queries                                                                    | pass   |
 | Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                                 | pass   |
 | External Library                    | Resolver、Generation、Commit、validate and index rebuild work outside repo          | Temporary external Library reached lagCount 0 and full validation passed                       | pass   |
-| Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 33 Markdown files and 11 ADRs passed                                                           | pass   |
+| Generation workflow                 | 12 deterministic runs satisfy the repository non-model budget                       | pre-tool p95 84.01 ms, post-tool p95 172.25 ms, non-model p95 256.26 ms                        | pass   |
+| Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 34 Markdown files and 12 ADRs passed                                                           | pass   |
 | Library selection and merge         | Config persistence、dry-run、atomic apply、conflict and recovery are correct        | Archive and read model integration coverage passed                                             | pass   |
 
 ## Error Log
@@ -340,10 +373,10 @@
 
 ## 5-Question Reboot Check
 
-| Question             | Answer                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------- |
-| Where am I?          | Phase 12 completed                                                                                      |
-| Where am I going?    | Publish the end-user guide and visual documentation                                                     |
-| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                           |
-| What have I learned? | See `findings.md`                                                                                       |
-| What have I done?    | Added the end-user guide, generated overview image, real Web UI screenshots, navigation, and validation |
+| Question             | Answer                                                                                                               |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Where am I?          | Phase 14 completed                                                                                                   |
+| Where am I going?    | Observe future real Generation Workflow samples without treating one provider run as p95                             |
+| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                                        |
+| What have I learned? | See `findings.md`                                                                                                    |
+| What have I done?    | Optimized Generation Workflow orchestration, added high-level commands, verified PTY input and recorded a real smoke |

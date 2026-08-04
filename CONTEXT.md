@@ -72,6 +72,14 @@ _Avoid_: Invalid Library, broken Gallery, rebuildable Index
 将完整 source Asset Library 的内容合并到 current destination Asset Library 的受控流程. Source 保持只读, destination 保留其 Library 身份.
 _Avoid_: Library Import, folder copy
 
+**Workspace Ready**:
+Repository checkout、项目依赖与当前 Asset Library 均已可用的运行前置状态. 它不要求当前 Codex task 已完成过 Generation, 也不依赖文档或 Prompt 缓存.
+_Avoid_: Warm cache, second generation
+
 **Generation Workflow**:
-由 Codex 驱动的流程, 从 Asset Library 读取生成输入, 并将结果归档回 Asset Library.
-_Avoid_: Web generation, gallery generation
+由 Codex 驱动的端到端流程, 从用户明确生成请求开始, 读取 Asset Library 的生成输入, 调用图片生成工具, 并在结果归档、索引可用且最终结果已回复后结束. 它包含 Codex orchestration 与 repository execution; provider latency 单独观测, 不属于可控非模型开销.
+_Avoid_: Web generation, gallery generation, Archive-only workflow
+
+**Workflow Telemetry**:
+以同一 `workflowRunId` 关联 Codex UI 权威端到端耗时与 repository stage durations 的可丢弃诊断记录. 未观测值保持 `unknown`, 不从其他 span 推测, 且不属于 Archive.
+_Avoid_: Generation metadata, Archive performance history, estimated SLO

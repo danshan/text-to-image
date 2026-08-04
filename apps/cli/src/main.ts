@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import {
   ArchiveError,
   LIBRARY_FORMAT_VERSION,
+  beginGeneration,
   cancelPreparedTransaction,
   captureGenerationOutput,
   canonicalizePossiblyMissing,
@@ -36,7 +37,9 @@ import {
   validateLibrary,
   WorkflowProgress,
   type CreateCreationInput,
+  type BeginGenerationRequest,
   type FailGenerationRequest,
+  type FinalizeGenerationRequest,
   type GenerationPreflightRequest,
   type PrepareGenerationRequest,
 } from "@text-to-image/archive";
@@ -79,6 +82,7 @@ export async function run(argv: string[]): Promise<CliResult> {
         "revision.checkpoint",
         "generation.prepare",
         "generation.preflight",
+        "generation.begin",
         "generation.verify-prompt",
         "generation.mark-invocation-started",
         "generation.capture",
@@ -250,6 +254,15 @@ export async function run(argv: string[]): Promise<CliResult> {
       preflightGeneration(resolved.libraryRoot, stringOption(parsed, "creation"), request),
     );
   }
+  if (command === "generation" && subcommand === "begin") {
+    return success(
+      beginGeneration(
+        resolved.libraryRoot,
+        stringOption(parsed, "creation"),
+        await readStdinJson<BeginGenerationRequest>(),
+      ),
+    );
+  }
   if (command === "generation" && subcommand === "verify-prompt") {
     assertPreparedPromptHash(
       resolved.libraryRoot,
@@ -306,28 +319,21 @@ export async function run(argv: string[]): Promise<CliResult> {
     (subcommand === "finalize" || subcommand === "finalize-happy-path")
   ) {
     const startedAt = Date.now();
-    const payload = await readStdinJson<{
-      outcome?: "succeeded" | "failed";
-      toolResult?: {
-        model: string | null;
-        parameters: Record<string, unknown>;
-        outputCount: number;
-      };
-      error?: {
-        code: string;
-        message: string;
-        retryable: boolean;
-        moderation?: { stage: "input" | "output" | "unknown"; categories: string[] };
-      };
-      workflowRunId?: string;
-      preToolMs?: number | null;
-      nonModelOverheadMs?: number | null;
-    }>();
+    const payload = await readStdinJson<
+      FinalizeGenerationRequest & {
+        workflowRunId?: string;
+        workflowElapsedMsBeforeFinalize?: number | null;
+        preToolMs?: number | null;
+        postToolMsBeforeFinalize?: number | null;
+        nonModelOverheadMs?: number | null;
+      }
+    >();
     const finalized = finalizeGenerationHappyPath(
       resolved.libraryRoot,
       stringOption(parsed, "transaction"),
       payload,
     );
+    const committedAt = Date.now();
     const readModel = new ReadModel(resolved.libraryRoot);
     try {
       let index: IndexCatchUpResult;
@@ -344,26 +350,39 @@ export async function run(argv: string[]): Promise<CliResult> {
           error: error instanceof Error ? error.message : String(error),
         };
       }
+      const completedAt = Date.now();
       const workflowRunId = payload.workflowRunId?.trim();
-      const progress = workflowRunId ? new WorkflowProgress(workflowRunId, startedAt) : null;
+      const elapsedBeforeFinalize = boundedDuration(payload.workflowElapsedMsBeforeFinalize);
+      const progress = workflowRunId
+        ? new WorkflowProgress(workflowRunId, startedAt - (elapsedBeforeFinalize ?? 0))
+        : null;
       const telemetry = progress
         ? (() => {
-            progress.stage("Archive committed");
-            if (index.status === "ready") progress.stage("Index ready");
+            progress.stage("Archive committed", committedAt);
+            if (index.status === "ready") progress.stage("Index ready", completedAt);
+            const postToolBeforeFinalize = boundedDuration(payload.postToolMsBeforeFinalize);
             return progress.telemetry({
               terminalStatus: finalized.generation.status,
               ...(finalized.generation.error?.code
                 ? { errorCode: finalized.generation.error.code }
                 : {}),
               ...(payload.preToolMs !== undefined ? { preToolMs: payload.preToolMs } : {}),
-              postToolMs: Date.now() - startedAt,
+              postToolMs:
+                postToolBeforeFinalize === null
+                  ? null
+                  : postToolBeforeFinalize + completedAt - startedAt,
               ...(payload.nonModelOverheadMs !== undefined
                 ? { nonModelOverheadMs: payload.nonModelOverheadMs }
                 : {}),
             });
           })()
         : null;
-      return success({ ...finalized, index, telemetry });
+      return success({
+        ...finalized,
+        index,
+        telemetry,
+        repositoryTimings: { finalizeAndIndexMs: completedAt - startedAt },
+      });
     } finally {
       readModel.close();
     }
@@ -486,12 +505,14 @@ function stringOption(
 
 export function readBoundedStdin(fd = 0, maxBytes = MAX_STDIN_BYTES): Promise<string> {
   const stream = fd === 0 ? process.stdin : createReadStream("/dev/null", { fd, autoClose: false });
+  const restoreRawMode = fd === 0 ? enterRawStdinMode(process.stdin) : () => undefined;
   return new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     let settled = false;
 
     const cleanup = () => {
+      restoreRawMode();
       stream.pause();
       stream.removeListener("data", onData);
       stream.removeListener("end", onEnd);
@@ -552,6 +573,19 @@ export function readBoundedStdin(fd = 0, maxBytes = MAX_STDIN_BYTES): Promise<st
     stream.once("end", onEnd);
     stream.once("error", onError);
   });
+}
+
+export function enterRawStdinMode(stream: typeof process.stdin): () => void {
+  if (!stream.isTTY || typeof stream.setRawMode !== "function") return () => undefined;
+  const wasRaw = stream.isRaw ?? false;
+  if (!wasRaw) stream.setRawMode(true);
+  return () => {
+    if ((stream.isRaw ?? false) !== wasRaw) stream.setRawMode(wasRaw);
+  };
+}
+
+function boundedDuration(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 export function parseBoundedStdin(input: Uint8Array | string, maxBytes = MAX_STDIN_BYTES): string {

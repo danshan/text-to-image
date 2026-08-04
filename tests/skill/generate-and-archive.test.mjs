@@ -20,12 +20,9 @@ test("skill metadata is lean and explicit-only", () => {
 test("workflow preserves the required generation transaction order", () => {
   const orderedMarkers = [
     "generation preflight",
-    "asset import",
-    "generation prepare",
-    "generation mark-invocation-started --library <library-root> --transaction <transaction-id> --prompt-sha256",
+    "generation begin --library <library-root> --creation <creation-id> --request-stdin",
     "image_gen.imagegen",
-    "generation capture",
-    "generation finalize",
+    "generation finalize --library <library-root> --transaction <transaction-id> --result-stdin",
   ];
 
   let previous = -1;
@@ -43,7 +40,8 @@ test("happy path does not repeat read-only preflight or prompt verification", ()
   assert.doesNotMatch(skill, /recover list --library/);
   assert.doesNotMatch(skill, /asset inspect --library/);
   assert.equal(skill.match(/generation verify-prompt/g)?.length, 1);
-  assert.equal(skill.match(/generation mark-invocation-started --library/g)?.length, 1);
+  assert.equal(skill.match(/generation prepare/g)?.length, 1);
+  assert.equal(skill.match(/generation mark-invocation-started/g)?.length, 1);
 });
 
 test("skill forbids unarchived and automatically retried generation", () => {
@@ -58,10 +56,20 @@ test("skill materializes and imports Session Images before generation", () => {
   assert.match(skill, /SESSION_IMAGE_NOT_MATERIALIZED/);
   assert.match(skill, /IMAGE_SOURCE_MISSING/);
   assert.match(skill, /IMAGE_SOURCE_UNREADABLE/);
-  assert.match(skill, /全部 inspection 成功后/);
-  assert.match(skill, /比较 import 与 Preflight inspection 返回的 `assetSha256`/);
+  assert.match(skill, /任一 inspection 失败时整体停止/);
+  assert.match(skill, /比较 expected 与 actual `assetSha256`/);
+  assert.match(skill, /不单独调用 `asset import`/);
   assert.match(skill, /不设置默认 role/);
   assert.match(skill, /保存这次 preflight 的完整 snapshot 与 canonical `libraryRoot`/);
+});
+
+test("skill keeps workflow telemetry truthful and inspection off the commit path", () => {
+  assert.match(skill, /Codex UI duration 不可观测时不发送 `nonModelOverheadMs`/);
+  assert.match(skill, /最终 SLO 保持 `unknown`/);
+  assert.match(skill, /不从 repository spans 推测/);
+  assert.match(skill, /下一动作必须启动 `generation finalize`/);
+  assert.match(skill, /不在 commit 前重复调用 `view_image`/);
+  assert.match(skill, /才在 commit 后读取 Archive Output/);
 });
 
 test("all referenced guidance files exist and describe their hard boundary", () => {

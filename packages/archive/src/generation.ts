@@ -24,8 +24,10 @@ import {
   assertCreationCommitted,
   assertRevisionCommitted,
   findAssetRelativePath,
+  importImageAsset,
   readDraft,
   updateDraft,
+  type ImportAssetResult,
 } from "./writer.js";
 import { assertLibraryValid, assertRecordSchema, readCommittedPathIndex } from "./validator.js";
 import { listRecoveryTransactions, type RecoverySummary } from "./recovery.js";
@@ -50,6 +52,17 @@ export interface PrepareGenerationResult {
   generationId: string;
   promptSha256: string;
   referencePaths: string[];
+}
+
+export interface BeginGenerationRequest extends PrepareGenerationRequest {
+  sessionImages?: Array<{
+    sourcePath: string;
+    expectedAssetSha256: string;
+  }>;
+}
+
+export interface BeginGenerationResult extends PrepareGenerationResult {
+  sessionImages: Array<ImportAssetResult & { sourceIndex: number }>;
 }
 
 export interface GenerationPreflightRequest {
@@ -90,6 +103,7 @@ export interface FinalizeGenerationRequest {
   outcome?: "succeeded" | "failed";
   toolResult?: CompleteGenerationRequest["toolResult"];
   error?: FailGenerationRequest["error"];
+  outputSources?: string[];
 }
 
 export interface CompleteGenerationRequest {
@@ -204,6 +218,42 @@ export function prepareGeneration(
     promptSha256: revision.promptSha256,
     referencePaths,
   };
+}
+
+export function beginGeneration(
+  libraryRoot: string,
+  creationId: string,
+  request: BeginGenerationRequest,
+  options: TransactionOptions = {},
+): BeginGenerationResult {
+  assertReferenceImages(request.references);
+  if (!request.prompt.trim()) {
+    throw new ArchiveError("ARCHIVE_SCHEMA_INVALID", "Effective Prompt must not be empty.");
+  }
+  const referencedAssets = new Set(request.references.map((reference) => reference.assetSha256));
+  for (const sessionImage of request.sessionImages ?? []) {
+    if (!referencedAssets.has(sessionImage.expectedAssetSha256)) {
+      throw new ArchiveError(
+        "ARCHIVE_SCHEMA_INVALID",
+        "Every Session Image must be present in the Generation references.",
+        { expectedAssetSha256: sessionImage.expectedAssetSha256 },
+      );
+    }
+  }
+  const sessionImages = (request.sessionImages ?? []).map((sessionImage, sourceIndex) => {
+    const imported = importImageAsset(libraryRoot, sessionImage.sourcePath, options);
+    if (imported.assetSha256 !== sessionImage.expectedAssetSha256) {
+      throw new ArchiveError("SESSION_IMAGE_CHANGED", "Session Image changed after Preflight.", {
+        sourceIndex,
+        expectedAssetSha256: sessionImage.expectedAssetSha256,
+        actualAssetSha256: imported.assetSha256,
+      });
+    }
+    return { sourceIndex, ...imported };
+  });
+  const prepared = prepareGeneration(libraryRoot, creationId, request, options);
+  markInvocationStarted(libraryRoot, prepared.transactionId, prepared.promptSha256, options);
+  return { ...prepared, sessionImages };
 }
 
 export function preflightGeneration(
@@ -376,7 +426,11 @@ export function finalizeGenerationHappyPath(
   commitMarkerPath: string;
   generation: GenerationRecord;
   draftUpdated: boolean;
+  captured: CaptureGenerationResult[];
 } {
+  const captured = (request.outputSources ?? []).map((source) =>
+    captureGenerationOutput(libraryRoot, transactionId, source, options),
+  );
   const outcome = request.outcome ?? (request.toolResult ? "succeeded" : "failed");
   if (outcome === "succeeded") {
     if (!request.toolResult) {
@@ -392,7 +446,7 @@ export function finalizeGenerationHappyPath(
     }
     failGeneration(libraryRoot, transactionId, { error: request.error }, options);
   }
-  return commitGeneration(libraryRoot, transactionId, options);
+  return { ...commitGeneration(libraryRoot, transactionId, options), captured };
 }
 
 export function completeGeneration(

@@ -570,6 +570,7 @@ describe("domain and image invariants", () => {
     const commands = (capabilities.value as { commands: string[] }).commands;
     expect(commands).toContain("asset.inspect");
     expect(commands).toContain("asset.import");
+    expect(commands).toContain("generation.begin");
     expect(() => inspectImageSource(join(ownerRoot, "missing.png"))).toThrowError(
       expect.objectContaining({ code: "IMAGE_SOURCE_MISSING" }),
     );

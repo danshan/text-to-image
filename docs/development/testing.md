@@ -280,13 +280,13 @@ Release baseline:
 - warm Gallery/search API p95 <= 200 ms.
 - warm thumbnail first screen interactive <= 2 seconds.
 - 8 concurrent commit test completes without deadlock.
-- fake generator warm `preflight -> invocation-ready` p95 <= 20 seconds.
-- fake generator warm `tool-returned -> committed and index-ready` p95 <= 10 seconds.
-- fake generator warm non-model end-to-end overhead <= 30 seconds.
+- fake generator Workspace Ready `request -> invocation_started` p95 <= 20 seconds.
+- fake generator Workspace Ready `tool_returned -> committed and index-ready` p95 <= 10 seconds.
+- fake generator Workspace Ready non-model end-to-end overhead <= 30 seconds.
 
 结果必须记录 macOS model、CPU、memory、filesystem、Node version、dataset seed 和 command. 每项报告 p50、p95 与 max, 并分别输出 orchestration、CLI、Archive、index 和 model duration. Benchmark 使用固定 seed, 不把 image generation latency 计入 Archive commit performance.
 
-确定性 CI gate 使用 fake generator 和 release-scale Library. 真实 `image_gen` smoke 记录 model latency 与用户端到端时间, 但 provider latency 不作为 CI pass/fail 条件. 仓库 span 与 Codex UI 时间通过相同 `workflowRunId` 关联, 不允许用仓库 span 推测或替代用户端到端结果.
+确定性 CI gate 使用 fake generator 和 release-scale Library, 每个 focused workflow gate 至少运行 12 次. long Prompt 回归必须覆盖 CLI raw-mode 状态恢复, 并通过 Codex 实际 PTY smoke 发送大于 4 KiB 的 UTF-8 request. 完成 deterministic gate 后执行一次真实 Workspace Ready `image_gen` observation, 记录 model latency 与 Codex UI 权威用户端到端时间; 单个真实样本不宣称 provider p95, provider latency 不作为 CI pass/fail 条件. 仓库 span 与 Codex UI 时间通过相同 `workflowRunId` 关联; UI duration 未暴露时结果保持 `unknown`, 不允许用仓库 span 推测或替代.
 
 ## Coverage Policy
 

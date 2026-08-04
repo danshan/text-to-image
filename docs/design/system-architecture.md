@@ -2,7 +2,7 @@
 title: System Architecture
 status: accepted
 owner: project
-last_updated: 2026-08-03
+last_updated: 2026-08-04
 related:
   - ../product/requirements.md
   - asset-library.md
@@ -98,6 +98,22 @@ Browser -> <configured-ip>:<port> -> Fastify -> Shared Packages -> Library
 8. 对 wildcard bind 枚举 usable active interfaces, 建立 IP literal allowlist 并输出 concrete URLs. Scoped IPv6 link-local address 不发布为缺少 zone 的 URL.
 
 Library Unavailable mode 不会创建 Library root、`.cache/`、SQLite index 或 fallback Library. Bootstrap 返回统一 `LIBRARY_UNAVAILABLE` state、reason 与 allowed actions. Static Web、bootstrap、health 和 Library transition control plane 保持可用, 其他 Library API 返回 `503 LIBRARY_UNAVAILABLE`. Library invalid 仍属于独立的 read-only diagnostics mode.
+
+`npm start` 与 daemon 在创建 Server process 前构建 Web static artifact; build failure 不产生 listener. development runtime 直接使用 Vite, Server 与 Web 默认端口分别为 `4174` 与 `5173`, 两者从同一组 resolved environment values 得到.
+
+### Daemon Runtime
+
+daemon 是 project-owned detached Server, 不是 `launchd` 或 `systemd` service. 每个 Git checkout 只有一个实例, lifecycle state 位于 ignored `.runtime/daemon/`, 不属于 Asset Library:
+
+```text
+.runtime/daemon/
+  metadata.json
+  server.log
+```
+
+启动器使用唯一 process identity 创建 detached Node.js child, stdout 与 stderr 写入当前 `server.log`. Server 完成 Library Runtime、Fastify listener、security allowlist 与 concrete URL 解析后, 通过 parent-child IPC 发布 readiness. 启动器收到匹配 PID 的 typed message 后才原子发布 metadata 并返回成功; 60 秒超时或 child 提前退出时发送 `SIGTERM`, 不发布 metadata, 保留当次日志.
+
+metadata 保存 PID、instance ID、启动时间、concrete URLs 与日志路径. status 在信号操作前同时核对 PID liveness 与唯一 process identity, 将缺失、有效或不匹配状态报告为 `stopped`、`running` 或 `stale`. stop 只向已验证实例发送 `SIGTERM`, 最多等待 10 秒; 超时后不升级为 `SIGKILL`, metadata 与日志保留用于诊断. 项目不提供自动重启、登录自启、named instances 或历史日志 rotation.
 
 ### Runtime Library Management
 

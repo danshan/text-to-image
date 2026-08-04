@@ -31,6 +31,7 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => void close());
   process.once("SIGTERM", () => void close());
   app.log.info({ address, urls }, "Text to Image local service is ready");
+  process.send?.({ type: "text-to-image-ready", pid: process.pid, urls });
 }
 
 main().catch((error: unknown) => {

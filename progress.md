@@ -346,6 +346,31 @@
   - Playwright 在默认 sandbox 内因 macOS Mach port 权限失败; 在 scoped outside-sandbox execution 中通过.
   - 完整 E2E 首轮仍断言旧的隐藏 Compare label; 更新为可见 `Compare` label 后 Chromium 与 WebKit 用例通过.
 
+### Phase 16: Local Runtime Entry Points
+
+- 已完成:
+  - 使用 `$grill-with-docs` 逐项确认 daemon scope、`.env` precedence、mise ownership、single instance、readiness、stop、status、logs、development ports、Web build gate 与 platform boundary.
+  - 将用户手册、产品需求、系统架构、开发指南与测试策略切回 `draft`, 同步 Phase 16 confirmed contract; 完成实现与交叉检查后恢复为 `accepted`.
+  - root npm scripts 使用 Node.js 24 `--env-file-if-exists` 为 `dev` 与 `start` 加载可选 `.env`; daemon 只在 Server child 启动时加载, build、test 与 CLI 不受影响.
+  - development launcher 统一解析 Server / Web ports, 并把同一 values 传入 Vite listener、proxy target 与 Server allowlist.
+  - 新增 npm-backed `mise.toml`, 提供 `dev`、`start` 与 daemon lifecycle tasks, pin Node.js 24.
+  - 新增 project-owned daemon launcher, 使用 detached Node.js child、唯一 process identity、IPC readiness、atomic metadata、structured log follow 与 bounded `SIGTERM` stop.
+  - `start` 与 daemon 启动前构建 Web UI; daemon 已运行时保持幂等且跳过重复 build.
+  - 增加 metadata unit tests、`.env` contract tests 与 test-owned runtime 的真实 daemon integration.
+- focused 验证:
+  - root typecheck: passed.
+  - daemon metadata、runtime entrypoint 与 Server config focused unit tests: 3 files / 13 tests passed.
+  - daemon integration: 1 file / 1 test passed, 覆盖 build、readiness、health、idempotent start、status、log follow 与 stop.
+  - `mise tasks validate`: 6 tasks validated; local task list 与 `dev` / `daemon:status` dry-run expansion matched npm scripts.
+- full 验证:
+  - `npm test`: 5 root files / 19 tests、31 Hook/Skill tests 与 24 Web tests passed.
+  - `npm run test:integration`: 7 files / 47 tests passed, 包含真实 daemon lifecycle integration.
+  - `npm run build`、`npm run typecheck`、`npm run lint`、`npm run format:check` 与 `npm run docs:check`: passed.
+  - `npm run test:e2e`: 13 passed, 1 intentional WebKit mutation skip.
+  - 临时 `.env` 与临时 Library smoke: `mise dev` 和 `mise start` 的 root page 与 `/api/v1/health` 均可访问; `SIGTERM` 后使用的临时端口均已关闭.
+- 错误:
+  - 首次 daemon integration 在 Web build 阶段失败, 因为 Vite config 把 production port `0` 当作 development port 校验. 将 host / port parsing 限定到 Vite `serve` command 后通过.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |
@@ -354,8 +379,8 @@
 | Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                                      | pass   |
 | Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 56-module Web build passed                  | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 3 root files / 11 tests, 31 Hook/Skill tests and 24 Web tests passed                           | pass   |
-| Integration                         | Archive、read model and HTTP security pass                                          | 6 files, 46 tests passed                                                                       | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 5 root files / 19 tests, 31 Hook/Skill tests and 24 Web tests passed                           | pass   |
+| Integration                         | Archive、read model、HTTP security and daemon lifecycle pass                        | 7 files, 47 tests passed                                                                       | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
 | Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
 | Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                                      | pass   |

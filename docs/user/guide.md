@@ -63,6 +63,26 @@ npm run dev
 
 这些命令分别用于安装项目依赖、创建本地图片库、检查图片库完整性和启动 Web UI. 初始化只需要执行一次. 日后通常只需运行 `npm run dev`.
 
+如果已经安装 mise, 可以使用更短的同名命令:
+
+```bash
+mise dev
+mise start
+mise daemon
+```
+
+`mise dev` 启动带热更新的开发服务. `mise start` 在当前终端构建并启动 Web UI. `mise daemon` 在后台启动, readiness 成功后返回; 查看状态、日志和停止服务分别使用:
+
+```bash
+mise daemon:status
+mise daemon:logs
+mise daemon:stop
+```
+
+daemon 日志位于项目目录的 `.runtime/daemon/server.log`. `Ctrl-C` 退出日志 follow, 不会停止后台服务.
+
+需要保存本机启动配置时, 复制 `.env.example` 为 `.env`. 文件可以省略, 且不会进入 Git. `.env` 只影响 `dev`、`start` 与 daemon, 不影响图片 Library CLI、build 或 tests. 显式 `--host` 优先于 shell environment 和 `.env`.
+
 ### 2.3 页面显示 Library unavailable
 
 进入左侧 `Settings` 页面, 查看页面显示的 Library 绝对路径:

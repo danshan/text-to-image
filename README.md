@@ -21,6 +21,19 @@ npm run dev
 npm run dev -- --host 0.0.0.0
 ```
 
+可选 root `.env` 会被 `dev`、`start` 与 daemon 自动加载, `.env.example` 提供变量清单. 已安装 mise 时可以使用 npm-backed tasks:
+
+```bash
+mise dev
+mise start
+mise daemon
+mise daemon:status
+mise daemon:logs
+mise daemon:stop
+```
+
+daemon state 与当前日志位于 ignored `.runtime/daemon/`. 它是单 checkout 后台进程, 不提供登录自启或崩溃重启.
+
 Wildcard 模式会输出当前 usable active interfaces 的 concrete URLs; scoped IPv6 link-local address 不发布. Non-loopback listener 只用于 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺. Web UI 不会启动 Codex; 图片生成必须在 Codex 中显式调用 `$generate-and-archive`.
 
 `npm run dev` 不会隐式初始化 Library. 如果 root、`library.json` 或访问权限缺失, Server 进入 `LIBRARY_UNAVAILABLE`, Web UI 在 Settings 显示绝对 Library path, 并提供 Initialize、Select 与 Retry. 此状态不会创建 Library 目录、`.cache/`、SQLite index 或 fallback Library; Index rebuild 不能恢复已删除的事实来源.

@@ -1,5 +1,7 @@
 /library/
 /text-to-image.local.json
+/.env
+/.runtime/
 **/node_modules/
 **/dist/
 /coverage/

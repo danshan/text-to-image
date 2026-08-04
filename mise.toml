@@ -1,0 +1,26 @@
+[tools]
+node = "24"
+
+[tasks.dev]
+description = "Start the development Web UI and Server"
+run = "npm run dev --"
+
+[tasks.start]
+description = "Build the Web UI and start the foreground Server"
+run = "npm start --"
+
+[tasks.daemon]
+description = "Build the Web UI and start the background Server"
+run = "npm run daemon --"
+
+[tasks."daemon:stop"]
+description = "Stop the background Server"
+run = "npm run daemon:stop"
+
+[tasks."daemon:status"]
+description = "Show the background Server status"
+run = "npm run daemon:status"
+
+[tasks."daemon:logs"]
+description = "Follow the background Server log"
+run = "npm run daemon:logs"

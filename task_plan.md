@@ -229,9 +229,32 @@ Phase 15
 - `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check` 与 `npm run docs:check` 通过.
 - 未修改 Archive Schema、Generation writer 或持久化格式; `promptRevisionId` 只从 rebuildable read model join 派生.
 
+### Phase 16: Local Runtime Entry Points
+
+- [x] 通过 `$grill-with-docs` 确认 daemon、`.env` 与 mise task 的完整契约.
+- [x] 将用户手册、产品需求、系统架构、开发指南与测试策略切回 `draft`.
+- [x] 实现可选 `.env` 加载、可配置 development ports 与 Web build startup gate.
+- [x] 增加 `mise.toml` 和 npm-backed `dev`、`start`、daemon lifecycle tasks.
+- [x] 实现单 checkout daemon readiness、metadata、日志、status 与安全停止.
+- [x] 补充 unit、real process integration、mise task 与文档验证.
+- [x] 更新研发记录并在交叉检查后恢复正式文档为 `accepted`.
+- **Status:** completed
+
+#### Confirmed Contract
+
+1. `mise.toml` pin Node.js 24; mise task 仅封装 root npm scripts, npm 继续作为实现与 CI 权威入口.
+2. `.env` 可选且不进入 Git, 只由 Server 启动命令加载; 优先级为 CLI、shell environment、`.env`、mode default.
+3. development Server 与 Web 默认端口分别为 `4174` 与 `5173`, shell 或 `.env` 可以覆盖, Vite、proxy 与 Server allowlist 必须共享 resolved ports.
+4. foreground `start` 与 daemon 启动前只构建 Web UI; build 失败不得启动 Server.
+5. 每个 Git checkout 只允许一个 daemon; 状态位于 `.runtime/daemon/`, 不进入 Asset Library 或 Git.
+6. daemon 通过内部 IPC 等待真实 listener 与 Library Runtime ready, 保留动态端口, 60 秒未 ready 则以 `SIGTERM` 停止并失败.
+7. `daemon:stop` 只发送 `SIGTERM` 并等待 10 秒; 超时后不使用 `SIGKILL`, 保留 metadata 与日志.
+8. status 区分 `running`、`stopped` 与 `stale`; logs 默认 follow; 每次启动截断旧日志, 不保留历史 rotation.
+9. daemon 正式支持 macOS 与 Linux, 不提供 Windows、登录自启、崩溃重启、named instances 或 JSON status.
+
 ## Remaining Design Questions
 
-无. Phase 15 provenance navigation 已完成, 后续只在真实 Library 出现新的关系歧义或 desktop visual regression 时增补.
+无. Phase 16 local runtime entry point 契约已实现并完成验证.
 
 ## Errors Encountered
 

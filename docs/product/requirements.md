@@ -202,6 +202,7 @@ related:
 - `NFR-011`: Generation Workflow 必须显示真实阶段与累计耗时. 没有 provider progress event 时不得编造百分比或 ETA; 只有 Commit Marker 有效且 index ready 后才能报告完成.
 - `NFR-012`: 正常路径必须增量投影尚未处理的 Commit Marker 并原子更新 `last_indexed_marker`. 全量 index rebuild 只用于 cache 缺失、Schema 变化、corruption 或显式 recovery.
 - `NFR-013`: Workflow performance telemetry 不属于 immutable Archive, 不得包含 Prompt、Reference guidance、文件路径、provider transcript 或 opaque handle. Telemetry failure 不得影响 Generation commit.
+- `NFR-014`: Server 启动命令必须支持可选 root `.env`; daemon lifecycle 正式支持 macOS 与 Linux, 每个 Git checkout 最多一个实例, Windows 不在支持范围.
 
 ## Acceptance Criteria
 
@@ -213,6 +214,8 @@ related:
 - Web UI 端到端覆盖图库、详情、Prompt diff、Curation、搜索、过滤与恢复提醒.
 - Web UI 和 API integration 覆盖运行时删除 active Library、绝对路径输入、初始化或选择、transition progress、原子切换和 stale session rejection.
 - `npm start` 与 `npm run dev` 都支持 `--host <ip>`. CLI 参数覆盖 `TEXT_TO_IMAGE_HOST`, 默认值为 `127.0.0.1`; invalid hostname 必须 fail fast.
+- `npm run dev`、`npm start`、`npm run daemon` 与对应 mise tasks 自动加载可选 `.env`; precedence 为 CLI、shell environment、`.env`、mode default, 且 `.env` 不影响 CLI、build、test、lint 或文档命令.
+- `npm start` 与 daemon 在监听前完成 Web build; daemon 只有在 60 秒内收到真实 Server readiness 后才成功, status、logs 与 10 秒 `SIGTERM` stop 均可独立验证.
 - Wildcard bind 输出每个 active interface 的 concrete URL, 接受对应 IP literal 的 `Host` 与 same-host `Origin`, 并继续拒绝任意 hostname、unknown interface、invalid Origin 与 CORS wildcard.
 - Safety Rejection 能归档 input、output 与 unknown moderation stage 及零到多个 categories, 旧的无 `moderation` Generation record 仍通过 Schema 校验.
 - Gallery 对每个 active Creation 只展示最新 failed 或 interrupted Generation Issue; 后续 succeeded Generation 会移除该 Creation 的全局提示, 历史仍可从 Timeline 访问.

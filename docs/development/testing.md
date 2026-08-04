@@ -209,6 +209,18 @@ Fastify injection 或 local server 覆盖:
 - wildcard interface URL discovery、scoped IPv6 exclusion 与 IP literal Host/Origin allowlist.
 - development listener 暴露 Vite, Fastify proxy target 保持 loopback.
 
+### Runtime Entry Point Tests
+
+- optional `.env` 存在、缺失与 shell override precedence.
+- npm scripts 保持 Server `.env` loading 与 daemon implementation 的权威入口.
+- mise task validation、task listing 与 dry-run command expansion.
+- development Server / Web port defaults、override、Vite proxy target 与 build command boundary.
+- daemon 真实 child process readiness、dynamic URL health、single-instance idempotency 与 metadata publication.
+- status process identity validation、Node log follow、`SIGTERM` stop、stopped / stale exit semantics.
+- Web build failure 不创建 foreground 或 daemon Server listener.
+
+daemon integration 必须使用 test-owned Library 与 runtime directory, 不读取、停止或删除开发者当前 daemon. macOS 是 release gate, Linux 验证同一 POSIX contract; Windows 不配置 daemon job.
+
 ### Web UI Tests
 
 Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow:
@@ -327,6 +339,7 @@ npm run test:e2e
 npm run test:performance
 npm run docs:check
 npm run fixtures:validate
+mise tasks validate
 ```
 
 Targeted workspace execution使用 npm `-w`:

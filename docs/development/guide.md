@@ -129,6 +129,11 @@ schemas -> none
 ```bash
 npm ci
 npm run dev
+npm start
+npm run daemon
+npm run daemon:status
+npm run daemon:stop
+npm run daemon:logs
 npm run build
 npm run typecheck
 npm run lint
@@ -139,6 +144,17 @@ npm run test:e2e
 npm run test:performance
 npm run docs:check
 npm run fixtures:validate
+```
+
+`mise.toml` pin Node.js 24 并提供同名薄封装. npm scripts 继续是实现与 CI 的权威入口:
+
+```bash
+mise dev
+mise start
+mise daemon
+mise daemon:status
+mise daemon:stop
+mise daemon:logs
 ```
 
 Asset CLI 通过 root script 调用:
@@ -213,9 +229,20 @@ npm start -- --host 192.168.1.10
 npm run dev -- --host 0.0.0.0
 ```
 
+root `.env` 是可选且 ignored 的 Server 启动配置. `.env.example` 只提供可复制的变量清单. `npm run dev`、`npm start` 与 `npm run daemon` 自动加载 `.env`; `assetctl`、build、test、lint 与 docs commands 不加载它. precedence 为 CLI 参数、已存在 shell environment、`.env`、mode default.
+
+production-like Server port 默认由 OS 分配 `0`. development Server 与 Web port 分别默认 `4174` 与 `5173`, 可以通过 `TEXT_TO_IMAGE_PORT` 与 `TEXT_TO_IMAGE_DEV_PORT` 覆盖; Vite listener、proxy target 与 Server allowlist 必须使用相同 resolved values.
+
+```dotenv
+TEXT_TO_IMAGE_HOST=127.0.0.1
+TEXT_TO_IMAGE_LOG_LEVEL=info
+TEXT_TO_IMAGE_PORT=4174
+TEXT_TO_IMAGE_DEV_PORT=5173
+```
+
 Wildcard bind 在启动时枚举 usable active interfaces 并输出 concrete URLs. Scoped IPv6 link-local address 因缺少 URL zone 不发布. 服务只接受其余 IP literal 对应的 `Host` 与 `Origin`; interface 变化后需要重启. Non-loopback 模式仅用于 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺.
 
-Server port 默认由 OS 分配可用 port, 避免固定端口冲突. 开发模式可以显式配置 port.
+`npm start` 与 `npm run daemon` 在启动 Server 前运行 Web build. daemon state 位于 `.runtime/daemon/`; `metadata.json` 保存 PID、instance ID、启动时间、URLs 与日志路径, `server.log` 保存当前启动的 structured Server log. 每次新启动截断旧日志.
 
 ## Development Workflow
 
@@ -258,6 +285,7 @@ Public errors 使用 stable code 和 typed details:
 - CLI machine mode: stdout 只输出一个 JSON value, logs 写 stderr.
 - Prompt、tool result 和 error 等结构化敏感输入通过 stdin 传递, 不进入 argv 或 shell history.
 - Server: structured JSON logs, 每个 request 有 correlation ID.
+- Daemon: stdout 与 stderr 合并写入 `.runtime/daemon/server.log`; `npm run daemon:logs` 持续 follow, `Ctrl-C` 只退出日志查看.
 - Library mutation: log transaction ID、operation、state 和 relative paths, 不记录完整 Prompt text by default.
 - Prompt 与图片属于用户数据, debug mode 也不得自动上传或复制到外部服务.
 - Hook 输出保持简短, 完整 validator report 写入 Library diagnostics cache 或明确的 workspace test artifact.
@@ -308,6 +336,14 @@ npm run test:performance
 不得在没有实际输出证据时把命令标记为 pass.
 
 ## Troubleshooting
+
+### Daemon is stale
+
+运行 `npm run daemon:status`. `stale` 表示 metadata 存在但 PID 或唯一 process identity 不再匹配. 再次执行 `npm run daemon` 会在启动前清理 stale metadata; `npm run daemon:stop` 对 stopped 或 stale 状态保持幂等. 不根据 metadata 中的 PID 手工发送信号.
+
+### Daemon does not stop
+
+`npm run daemon:stop` 发送 `SIGTERM` 并等待 10 秒. 超时后命令失败并保留 metadata 与日志, 不自动使用 `SIGKILL`. 先检查 `.runtime/daemon/server.log` 与 process identity, 再决定人工恢复.
 
 ### Library path not found
 

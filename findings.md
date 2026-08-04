@@ -97,6 +97,15 @@
 - 现有 Creation route 已支持 query-aware browser location. 使用 `revision` 与 `generation` 参数即可实现 refresh、copy、back/forward 与详情页返回, 无需新增 Prompt Revision route 或 router dependency.
 - Prompt Compare 的双选状态与 provenance Focus 是不同用户意图. 共用 checkbox 会让多选后的 Timeline target 含糊, 因而必须保留独立控件与 accessible state.
 
+## Phase 16 Implementation Findings
+
+- mise task runner 本身不提供 detached process、PID 或 stop/status lifecycle. `mise.toml` 应保持 npm-backed 薄封装, daemon lifecycle 由单一 project script 负责.
+- mise `[env] _.file` 会让文件值覆盖已有 shell environment, 与确认的 precedence 相反. Node.js 24 `--env-file-if-exists` 保持 shell environment 优先, 且缺失文件不阻断启动.
+- Vite build 与 dev server 都加载 `vite.config.ts`. development-only port validation 必须按 Vite `command` 隔离, 否则合法 production-like port `0` 会错误阻断 Web build.
+- detached Server 不能只用 PID 判定 owner, 否则 stale metadata 遇到 PID reuse 可能向无关进程发送信号. 唯一 `argv0` process identity 与 PID liveness 共同校验后才能执行 stop.
+- daemon readiness 必须来自真实 Server entrypoint. Parent-child IPC 可以在不增加公开 HTTP contract 或 readiness file 的情况下传递 PID 与 concrete URLs.
+- daemon 的 test runtime directory 必须由 test-owned temp root 注入, 避免测试读取、停止或删除开发者当前 `.runtime/daemon/`.
+
 ## Research Findings
 
 - Codex 官方手册说明 `AGENTS.md` 是持久仓库指令, 仓库内较近层级覆盖较远层级.

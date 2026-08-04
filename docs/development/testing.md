@@ -11,6 +11,7 @@ related:
   - guide.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
+  - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
 ---
 
 # 测试策略
@@ -160,6 +161,14 @@ before_lock_release
 - opaque handle 报告 `SESSION_IMAGE_NOT_MATERIALIZED`, sandbox denial 不误报为 missing.
 - Reference roles 只从明确措辞解析, 语义不足时询问且不设置默认值.
 - inspection 与 import hash 不一致时停止 Generation, 已提交 import 不执行回滚.
+- `generation preflight` 一次返回 capability、canonical Library、recovery warning、Draft snapshot 与全部 source inspection, 且不修改 Archive.
+- stdin request 在首个 `LF` 或 EOF 完成, 覆盖精确 1 MiB boundary、oversize、严格 invalid UTF-8、第二个 JSON value、尾随非空内容, 以及 child process 在未发送 EOF 时于 `LF` 后返回.
+- effective Prompt 对 Prepare 与 fake generator byte-identical, hash mismatch 不执行 `mark-invocation-started`.
+- capture 返回 staged Output path, fake Skill 不再通过 recovery request 或 staging scan 定位图片.
+- 高层 happy-path command 复用低层状态机, 在每个内部 transition 中断后仍能通过现有 recovery command 处理.
+- 增量 Marker catch-up 原子更新 `last_indexed_marker`; projection failure 保留 committed Generation 并返回 index degraded.
+- progress 只包含真实阶段与累计耗时, provider 没有事件时不生成百分比或 ETA.
+- telemetry payload 不包含 Prompt、Reference guidance、文件路径、provider transcript 或 opaque handle, telemetry failure 不影响 commit.
 
 fake generator 只模拟 tool boundary, 不绕过 staging、capture、commit 与 validator.
 
@@ -271,8 +280,13 @@ Release baseline:
 - warm Gallery/search API p95 <= 200 ms.
 - warm thumbnail first screen interactive <= 2 seconds.
 - 8 concurrent commit test completes without deadlock.
+- fake generator warm `preflight -> invocation-ready` p95 <= 20 seconds.
+- fake generator warm `tool-returned -> committed and index-ready` p95 <= 10 seconds.
+- fake generator warm non-model end-to-end overhead <= 30 seconds.
 
-结果必须记录 macOS model、CPU、memory、filesystem、Node version、dataset seed 和 command. Benchmark 使用固定 seed, 不把 image generation latency 计入 Archive commit performance.
+结果必须记录 macOS model、CPU、memory、filesystem、Node version、dataset seed 和 command. 每项报告 p50、p95 与 max, 并分别输出 orchestration、CLI、Archive、index 和 model duration. Benchmark 使用固定 seed, 不把 image generation latency 计入 Archive commit performance.
+
+确定性 CI gate 使用 fake generator 和 release-scale Library. 真实 `image_gen` smoke 记录 model latency 与用户端到端时间, 但 provider latency 不作为 CI pass/fail 条件. 仓库 span 与 Codex UI 时间通过相同 `workflowRunId` 关联, 不允许用仓库 span 推测或替代用户端到端结果.
 
 ## Coverage Policy
 

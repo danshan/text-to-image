@@ -119,4 +119,15 @@ export interface IndexStatus {
   latestArchiveMarker: string | null;
   lastIndexedMarker: string | null;
   lagCount: number;
+  degraded?: boolean;
+  error?: string;
+}
+
+export interface IndexCatchUpResult {
+  status: "ready" | "degraded";
+  processed: number;
+  total: number;
+  lastIndexedMarker: string | null;
+  failedMarker: string | null;
+  error?: string;
 }

@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { createSchema } from "./schema.js";
-import type { IndexProgress } from "./types.js";
+import { createSchema, READ_MODEL_VERSION } from "./schema.js";
+import type { IndexCatchUpResult, IndexProgress } from "./types.js";
 
 interface MarkerRecord {
   kind: string;
@@ -102,7 +102,7 @@ function normalizedExtension(path: string): "png" | "jpg" | "webp" {
   throw new TypeError(`Unsupported indexed image extension: ${extension}`);
 }
 
-async function indexMarker(
+export async function indexMarker(
   database: DatabaseSync,
   root: string,
   marker: CommitMarker,
@@ -278,9 +278,30 @@ async function indexMarker(
       ), height)
     WHERE EXISTS (SELECT 1 FROM generation_outputs WHERE asset_sha256 = assets.sha256);
   `);
+  const previousIds = database
+    .prepare("SELECT value FROM meta WHERE key = 'indexed_marker_ids'")
+    .get() as { value?: unknown } | undefined;
+  let indexedIds: string[] = [];
+  if (typeof previousIds?.value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(previousIds.value);
+      if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+        indexedIds = [...parsed];
+      }
+    } catch {
+      indexedIds = [];
+    }
+  }
+  if (!indexedIds.includes(marker.id)) indexedIds.push(marker.id);
   database
     .prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('last_indexed_marker', ?)")
     .run(marker.id);
+  database
+    .prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('last_indexed_marker_created_at', ?)")
+    .run(marker.createdAt);
+  database
+    .prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('indexed_marker_ids', ?)")
+    .run(JSON.stringify(indexedIds));
 }
 
 async function applyCuration(database: DatabaseSync, root: string): Promise<void> {
@@ -404,6 +425,121 @@ export async function rebuildReadModel(
   return finalPath;
 }
 
+/**
+ * Apply only Commit Markers that are newer than the atomically recorded cursor.
+ * Each marker and cursor update share one SQLite transaction, so a failed
+ * projection leaves the previous cursor valid for a later retry.
+ */
+export async function catchUpReadModel(
+  libraryRoot: string,
+  onProgress?: (progress: IndexProgress) => void,
+  options: { onMarker?: (marker: CommitMarker) => void } = {},
+): Promise<IndexCatchUpResult> {
+  const root = resolve(libraryRoot);
+  await assertLibraryManifestPresent(root);
+  const databasePath = join(root, ".cache", "index.sqlite");
+  const database = new DatabaseSync(databasePath);
+  const markerEntries = await listCommitMarkers(root);
+  let lastIndexedMarker: string | null = null;
+  let processed = 0;
+  try {
+    const schema = database.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
+      { value?: unknown } | undefined;
+    if (schema?.value !== String(READ_MODEL_VERSION)) {
+      return {
+        status: "degraded",
+        processed: 0,
+        total: markerEntries.length,
+        lastIndexedMarker: null,
+        failedMarker: null,
+        error: "Read model schema version is unsupported.",
+      };
+    }
+    const meta = database
+      .prepare("SELECT value FROM meta WHERE key = 'last_indexed_marker'")
+      .get() as { value?: unknown } | undefined;
+    if (meta && typeof meta.value === "string") lastIndexedMarker = meta.value;
+    const indexedIdsRow = database
+      .prepare("SELECT value FROM meta WHERE key = 'indexed_marker_ids'")
+      .get() as { value?: unknown } | undefined;
+    let indexedMarkerIds = new Set<string>();
+    if (typeof indexedIdsRow?.value === "string") {
+      try {
+        const parsed: unknown = JSON.parse(indexedIdsRow.value);
+        if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+          indexedMarkerIds = new Set(parsed);
+        }
+      } catch {
+        indexedMarkerIds = new Set();
+      }
+    }
+    const cursorIndex = lastIndexedMarker
+      ? markerEntries.findIndex(({ marker }) => marker.id === lastIndexedMarker)
+      : -1;
+    if (lastIndexedMarker && cursorIndex === -1) {
+      return {
+        status: "degraded",
+        processed: 0,
+        total: markerEntries.length,
+        lastIndexedMarker,
+        failedMarker: null,
+        error: "Indexed Commit Marker is not present in the Archive.",
+      };
+    }
+    for (const [index, { marker }] of markerEntries.entries()) {
+      if (indexedMarkerIds.size > 0 ? indexedMarkerIds.has(marker.id) : index <= cursorIndex) {
+        continue;
+      }
+      try {
+        database.exec("BEGIN IMMEDIATE");
+        options.onMarker?.(marker);
+        await indexMarker(database, root, marker);
+        database.exec("COMMIT");
+        processed += 1;
+        lastIndexedMarker = marker.id;
+        indexedMarkerIds.add(marker.id);
+        onProgress?.({ processed: index + 1, total: markerEntries.length, markerId: marker.id });
+      } catch (error) {
+        try {
+          database.exec("ROLLBACK");
+        } catch {
+          // Keep the original projection failure as the useful diagnostic.
+        }
+        return {
+          status: "degraded",
+          processed,
+          total: markerEntries.length,
+          lastIndexedMarker,
+          failedMarker: marker.id,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+    try {
+      await applyCuration(database, root);
+      rebuildSearch(database);
+    } catch (error) {
+      return {
+        status: "degraded",
+        processed,
+        total: markerEntries.length,
+        lastIndexedMarker,
+        failedMarker: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    return {
+      status: "ready",
+      processed,
+      total: markerEntries.length,
+      lastIndexedMarker,
+      failedMarker: null,
+    };
+  } finally {
+    database.close();
+  }
+}
+
 export async function assertLibraryManifestPresent(libraryRoot: string): Promise<void> {
   const manifestPath = join(resolve(libraryRoot), "library.json");
   let metadata;
@@ -426,6 +562,21 @@ export async function assertLibraryManifestPresent(libraryRoot: string): Promise
 export async function latestMarkerId(libraryRoot: string): Promise<string | null> {
   const markers = await listCommitMarkers(resolve(libraryRoot));
   return markers.at(-1)?.marker.id ?? null;
+}
+
+export async function markerLagCount(
+  libraryRoot: string,
+  lastIndexedMarker: string | null,
+  indexedMarkerIds: readonly string[] = [],
+): Promise<number> {
+  const markers = await listCommitMarkers(resolve(libraryRoot));
+  if (indexedMarkerIds.length > 0) {
+    const indexed = new Set(indexedMarkerIds);
+    return markers.filter(({ marker }) => !indexed.has(marker.id)).length;
+  }
+  if (!lastIndexedMarker) return markers.length;
+  const index = markers.findIndex(({ marker }) => marker.id === lastIndexedMarker);
+  return index === -1 ? markers.length : markers.length - index - 1;
 }
 
 async function listCommitMarkers(

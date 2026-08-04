@@ -8,6 +8,7 @@ related:
   - asset-library.md
   - ../adr/0002-enforce-the-archive-with-repository-owned-controls.md
   - ../adr/0006-commit-generations-atomically.md
+  - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
 ---
 
 # Generation Workflow 设计
@@ -56,6 +57,8 @@ MVP 不支持:
 8. built-in output 不得只留在 `$CODEX_HOME/generated_images/...`; 必须捕获进 staging 并提交到 Library.
 9. 所有生成结果都进入历史, 主观不满意通过 Curation 标记, 不丢弃调用证据.
 10. 自动 retry 禁止; Replay 和 retry 都需要新的显式 Generation.
+11. Prepare 归档的 effective Prompt 与传入 built-in tool 的 Prompt 必须 UTF-8 byte-identical, 并在 invocation marker 前通过 SHA-256 gate.
+12. Workflow telemetry 是可丢弃诊断数据, 不属于 Archive, 其失败不得影响 Generation terminal status 或 commit.
 
 ## Inputs
 
@@ -143,16 +146,17 @@ any non-committed state
 
 ### 1. Resolve and Validate
 
-1. 按统一优先级解析 Library root, 并在本次工作流中固定返回的 canonical path.
-2. 运行 quick validation, 检查 format version、lock 和目标 Creation.
-3. 列出未恢复 staging transactions; 存在异常不阻断无关 Generation, 但必须向用户显示 warning.
-4. 读取 Prompt Draft、Draft metadata、selected Image Asset、Session Image source 和 Curation display data.
+1. Skill 通过单个只读 `generation preflight` command 解析 Library root, 并在本次工作流中固定返回的 canonical path.
+2. Preflight 返回 capability、Library format、quick validation、未恢复 transaction 摘要、目标 Creation、Prompt Draft、Draft metadata、selected Image Asset 与全部 Session Image inspection 结果.
+3. Preflight 不导入图片、不创建 Generation transaction、不修改 Archive; 任一 inspection 失败时整体失败.
+4. 未恢复 transaction 不阻断无关 Generation, 但必须向用户显示 warning.
 5. 对已有 Reference Image 验证已提交身份与 payload hash; 对全部输入验证 roles 已从用户明确措辞或已保存 selection 得出.
+6. 后续 command 显式使用 Preflight 返回的 canonical Library root, 不重新解析或切换 Library.
 
 ### 2. Ingress Session Images
 
 1. 按用户提供或会话出现顺序稳定编号 Session Image. 只有 opaque handle 且宿主无法暴露原始 bytes 或本地 path 时, 以 `SESSION_IMAGE_NOT_MATERIALIZED` 停止.
-2. 对全部 source 调用只读 `asset inspect`. 任一 source missing、unreadable、unsupported 或 invalid 时, 不导入任何图片, 不创建 Generation transaction.
+2. 复用 Preflight 返回的全部 source inspection. 不重复调用 `asset inspect`; 任一 source missing、unreadable、unsupported 或 invalid 时, 不导入任何图片, 不创建 Generation transaction.
 3. sandbox permission denial 先请求 scoped read access 并有限重试一次, 不得误报为 source missing.
 4. 全部 inspection 成功后, 逐个调用 `asset import`. 每次 import 创建独立 transaction, 已提交 Image Asset 不因后续失败回滚.
 5. import 返回的 `assetSha256` 必须与 inspection 相同; 不同表示 source 并发变化, 停止 Generation.
@@ -165,7 +169,9 @@ any non-committed state
 2. 根据 parent Revision 和 Draft 构造 effective prompt.
 3. 把输入图片按 index 和 role 写入 prompt scaffolding.
 4. 检查 material change; 必要时等待用户确认.
-5. 计算 prompt SHA-256, 分配 transaction、Revision 和 Generation ID.
+5. 在内存中只构造一次 effective Prompt, 计算原始 UTF-8 bytes 的 SHA-256, 不执行 Unicode 或换行规范化.
+6. 同一个 byte-identical Prompt 同时用于 Prepare request 与 built-in tool call. Prepare 后不得重新生成、重排或复制 Prompt.
+7. 并发 workflow 使用 transaction-scoped key 保存内存 Prompt; commit、known failure 或显式 recovery 后立即清除.
 
 ### 4. Prepare Transaction
 
@@ -185,22 +191,26 @@ assetctl generation prepare \
   "transactionId": "9f386ef3-b8ce-4197-ad14-a2fda4c19754",
   "revisionId": "1567f72f-7a13-45cd-acd3-84a0090547e1",
   "generationId": "755fc2f9-81a8-4d3a-89c4-3d60ca2ed21d",
+  "promptSha256": "da88d518f0c3b93057393511685b93423f2b350c2e4ac84f7b8b64346a54b552",
   "referencePaths": [
     "/canonical/library/assets/sha256/92/92b7b13cbeef65f8a258d705e19916a5917865543398eff786c749678a2d820a.png"
   ]
 }
 ```
 
-CLI 从 stdin 读取一个完整 JSON request, 避免 Prompt 出现在 argv、process list 或 shell history. JSON stdout 是 Skill 与 writer 的接口. human diagnostics 写入 stderr, 不得混入 stdout.
+CLI 从 stdin 读取一个 JSON request, 避免 Prompt 出现在 argv、process list 或 shell history. Canonical framing 是以首个 `LF` 结束的单行 JSON; EOF 先到时继续兼容. JSON string 内的正文换行使用标准转义, payload 上限为 1 MiB, 第二个 JSON value 或尾随非空内容必须拒绝. JSON stdout 是 Skill 与 writer 的接口, human diagnostics 写入 stderr, 不得混入 stdout.
+
+带 hash gate 的 invocation marker 在写入 marker 前验证内存 Prompt SHA-256 与 Prepare 返回的 `promptSha256` 一致. 验证失败时 transaction 保持 `prepared`, 不调用图片工具. `generation verify-prompt` 仅保留为独立诊断或 fault-injection command.
 
 ### 5. Mark Invocation
 
-在调用 built-in tool 之前执行:
+在调用 built-in tool 之前只执行一次带 hash gate 的 marker command:
 
 ```bash
 assetctl generation mark-invocation-started \
   --library <library-root> \
-  --transaction <transaction-id>
+  --transaction <transaction-id> \
+  --prompt-sha256 <prompt-sha256>
 ```
 
 此操作完成后如果 Codex 消失, outcome 必须视为 unknown. 该保守选择可能记录一次实际上尚未开始的 interrupted Generation, 但不会错误重试一个可能已经执行的调用.
@@ -223,6 +233,8 @@ assetctl generation capture \
 ```
 
 capture 复制 bytes 到 transaction staging, sniff media type, 解码尺寸并计算 SHA-256. 原 `$CODEX_HOME` 文件不自动删除.
+
+capture response 同时返回 canonical staged Output path. Skill 直接使用该路径执行 `view_image`, 不需要读取完整 recovery request 或扫描 staging.
 
 Codex 使用 `view_image` 检查 staged output 的主体、风格、构图、文字和明确约束. 质量不满意不改变 tool execution status; Output 仍提交, 用户可随后隐藏或评分.
 
@@ -248,6 +260,8 @@ assetctl generation fail \
 
 result 和 error JSON 均从 stdin 读取. error record 只保存 stable code、短摘要、可恢复标识和工具明确暴露的 bounded metadata, 不保存 secret、完整 transcript 或不受控 stack dump.
 
+Skill happy path 使用一个高层 post-tool command 完成 terminal record、Commit Marker 发布与增量 index catch-up. 该 command 复用现有 `complete | fail`、`commit` 与 Read Model primitives; 低层命令继续用于 recovery、fault injection 和状态机测试. command 在任一步中断时必须留下现有合法 recovery state, 不创建第二套事务语义.
+
 图片工具明确返回 safety moderation rejection 时, Skill 使用 `IMAGE_GENERATION_SAFETY_REJECTED`. 若工具暴露 moderation stage 与 categories, error request 增加 optional `moderation`; 未暴露 stage 时使用 `unknown`, 未暴露 categories 时使用空数组. Request ID 与完整 provider payload 不进入 Archive. Safety Rejection 是 known failure, 不自动 retry; output-stage rejection 不得表述成 Prompt violation.
 
 ### 9. Commit
@@ -264,7 +278,9 @@ writer 按 Asset Library 逻辑提交协议发布 Commit Marker. Skill 不直接
 
 Commit 后, 如果当前 Draft hash 仍等于 prepare 时的 `draftContentSha256`, writer 保留 Draft 的原始正文和语言, 仅把 `basedOnRevisionId` 更新为新 Revision. Generation 成功、失败或中断都不得把 effective Prompt 写回 Draft. 如果用户在生成期间修改 Draft, 不覆盖用户内容, 也不更新其 based-on metadata, 只报告 concurrent edit.
 
-indexer 异步消费 Commit Marker. 索引失败记录 warning, 不回滚 Generation.
+正常路径只增量投影尚未处理的 Commit Marker. 每个 Marker 在单个 SQLite transaction 中应用, 成功后原子更新 `last_indexed_marker`. 全量 rebuild 只用于 cache 缺失、Schema 变化、corruption 或显式 recovery.
+
+索引失败记录 warning, 不回滚已 committed Generation. 高层 command 返回 `index: degraded`, 后续运行从最后一个已应用 Marker 继续 catch up; 不重新调用图片工具.
 
 ### 11. Report
 
@@ -276,6 +292,33 @@ Skill 最终报告:
 - 实际 Prompt Revision path.
 - built-in tool mode.
 - 任何未更新 Draft、索引失败或 recovery warning.
+- `workflowRunId`、用户端到端耗时、各可观测阶段 duration 与 SLO 判断.
+
+## Performance and Progress Contract
+
+Generation Workflow 同时维护用户体验 SLO 与仓库执行 SLO. 两层使用同一个 `workflowRunId` 关联, 但仓库计时不得代替 Codex UI 从请求到最终回复的端到端时间.
+
+warm workflow 目标:
+
+- 用户端到端耗时为图片模型耗时加不超过 30 秒非模型开销.
+- `request -> invocation_started` p95 不超过 20 秒.
+- `tool_returned -> committed and index-ready` p95 不超过 10 秒.
+
+Skill 只显示真实阶段与累计耗时:
+
+```text
+Preflight
+Reference ingress
+Prompt frozen
+Waiting for image model
+Output captured
+Archive committed
+Index ready
+```
+
+provider 没有暴露 progress event 时不显示百分比或 ETA. 等待超过 60 秒可以显示 heartbeat 与已等待时长. 只有 Commit Marker 有效且 index ready 后才能报告完成; committed 但 index degraded 时报告 `Committed, index degraded`.
+
+Workflow telemetry 不写入 immutable Archive. 它只包含 IDs、阶段名、monotonic duration、terminal status 与 stable error code, 不包含 Prompt、Reference guidance、文件路径、provider transcript 或 opaque handle. Telemetry failure 不得影响 Generation commit.
 
 ## Replay
 
@@ -332,6 +375,8 @@ Hook 永远不写资产、不自动 repair、不清理 staging. 因为某些工�
 - Draft concurrent edit: Generation 继续使用已冻结 Revision, commit 后不覆盖新 Draft.
 - Commit lock conflict: 有界等待后返回 retryable error, 不重新调用图片生成工具.
 - Index failure: Generation committed, UI 显示 index degraded 并允许 rebuild.
+- Prepare 后内存 Prompt 丢失: transaction 保持 `prepared`, 禁止根据摘要重构并继续调用; 只能显式 cancel 后重新开始.
+- Prompt hash mismatch: 在 invocation marker 前 fail closed, 不调用图片工具.
 
 ## Compatibility
 
@@ -352,6 +397,11 @@ assetctl capabilities --format json
 - Prompt augmentation golden tests: 常规优化不改变核心意图.
 - Material-change tests: 主体、构图、用途、风格方向变化必须要求确认.
 - fake generator tests: success、generic known failure、input/output/unknown Safety Rejection、lost result、multiple Output、Replay.
+- stdin framing tests: `LF`、EOF compatibility、精确 1 MiB boundary、oversize、严格 invalid UTF-8、第二个 JSON value 与尾随非空内容, 以及 child process 在未发送 EOF 时于 `LF` 后返回.
+- Prompt identity tests: Prepare Prompt 与 tool argument UTF-8 byte-identical, hash mismatch 不写 invocation marker.
+- Preflight tests: 单次只读返回、multi-source all-or-nothing inspection、fixed Library root 与 no-write assertion.
+- incremental index tests: ordered Marker catch-up、atomic `last_indexed_marker`、degraded result 与 full rebuild recovery.
+- performance contract tests: fake generator 下 warm pre-tool p95、post-tool p95 与非模型端到端 budget.
 - fault injection: 每个 state transition 和 commit step 进程中断.
 - Hook tests: protected/allowed path matrix, external Library path, symlink, shell indirection.
 - real smoke: 无 Reference Image、带 Reference Image、Prompt branch 后各执行一次 built-in generation.

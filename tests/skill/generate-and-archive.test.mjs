@@ -19,16 +19,13 @@ test("skill metadata is lean and explicit-only", () => {
 
 test("workflow preserves the required generation transaction order", () => {
   const orderedMarkers = [
-    "capabilities --format json",
-    "library resolve --format json",
-    "asset inspect",
+    "generation preflight",
     "asset import",
     "generation prepare",
-    "generation mark-invocation-started",
+    "generation mark-invocation-started --library <library-root> --transaction <transaction-id> --prompt-sha256",
     "image_gen.imagegen",
     "generation capture",
-    "generation complete",
-    "generation commit",
+    "generation finalize",
   ];
 
   let previous = -1;
@@ -37,6 +34,16 @@ test("workflow preserves the required generation transaction order", () => {
     assert.ok(current > previous, `${marker} must appear after the prior workflow step`);
     previous = current;
   }
+});
+
+test("happy path does not repeat read-only preflight or prompt verification", () => {
+  assert.equal(skill.match(/generation preflight/g)?.length, 2);
+  assert.doesNotMatch(skill, /capabilities --format json/);
+  assert.doesNotMatch(skill, /library resolve --format json/);
+  assert.doesNotMatch(skill, /recover list --library/);
+  assert.doesNotMatch(skill, /asset inspect --library/);
+  assert.equal(skill.match(/generation verify-prompt/g)?.length, 1);
+  assert.equal(skill.match(/generation mark-invocation-started --library/g)?.length, 1);
 });
 
 test("skill forbids unarchived and automatically retried generation", () => {
@@ -52,9 +59,9 @@ test("skill materializes and imports Session Images before generation", () => {
   assert.match(skill, /IMAGE_SOURCE_MISSING/);
   assert.match(skill, /IMAGE_SOURCE_UNREADABLE/);
   assert.match(skill, /全部 inspection 成功后/);
-  assert.match(skill, /比较 import 与 inspection 返回的 `assetSha256`/);
+  assert.match(skill, /比较 import 与 Preflight inspection 返回的 `assetSha256`/);
   assert.match(skill, /不设置默认 role/);
-  assert.match(skill, /固定 resolver 返回的 `libraryRoot`/);
+  assert.match(skill, /保存这次 preflight 的完整 snapshot 与 canonical `libraryRoot`/);
 });
 
 test("all referenced guidance files exist and describe their hard boundary", () => {

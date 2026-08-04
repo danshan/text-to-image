@@ -203,6 +203,9 @@ export type ArchiveErrorCode =
   | "IMAGE_SOURCE_MISSING"
   | "IMAGE_SOURCE_UNREADABLE"
   | "IMAGE_UNSUPPORTED"
+  | "PROMPT_HASH_MISMATCH"
+  | "STDIN_INVALID"
+  | "STDIN_TOO_LARGE"
   | "LIBRARY_ALREADY_EXISTS"
   | "LIBRARY_CONFIG_INVALID"
   | "LIBRARY_NOT_FOUND"
@@ -292,3 +295,5 @@ export function assertTransactionTransition(
 export function isLowercaseSha256(value: string): boolean {
   return /^[a-f0-9]{64}$/.test(value);
 }
+
+export * from "./workflow.js";

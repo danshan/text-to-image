@@ -41,4 +41,5 @@ npm run assetctl -- recover quarantine --library <library-root> --transaction <t
 - Tool 成功但 output path 不可解析或不可访问: 保持 transaction, 请求权限或显式 recovery; 不声明 success.
 - Capture 过程中失败: 不删除已 capture Output, inspect 后继续或 quarantine.
 - Commit lock conflict: 有界等待失败后只重试 commit, 不重新生成.
-- Marker 已发布但 index refresh 失败: Generation 已 committed, 报告 degraded index 并允许 rebuild.
+- Marker 已发布但 index refresh 失败: Generation 已 committed, 报告 `index.status: "degraded"`, 保留 atomic `last_indexed_marker`, 后续只执行 incremental catch-up 或显式 full rebuild, 不重复生成.
+- Prompt SHA-256 gate mismatch: transaction remains `prepared`; do not mark invocation or call the image tool.

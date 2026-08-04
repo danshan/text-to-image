@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync } from "node:fs";
+import { createReadStream, readFileSync, readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
   ArchiveError,
@@ -12,6 +12,7 @@ import {
   completeGeneration,
   createCreation,
   failGeneration,
+  finalizeGenerationHappyPath,
   findGitRoot,
   importImageAsset,
   inspectImageSource,
@@ -19,6 +20,8 @@ import {
   inspectRecoveryTransaction,
   listRecoveryTransactions,
   markInvocationStarted,
+  preflightGeneration,
+  assertPreparedPromptHash,
   mergeLibrary,
   persistLibrarySelection,
   prepareGeneration,
@@ -31,11 +34,13 @@ import {
   updateDraft,
   updateImageCuration,
   validateLibrary,
+  WorkflowProgress,
   type CreateCreationInput,
   type FailGenerationRequest,
+  type GenerationPreflightRequest,
   type PrepareGenerationRequest,
 } from "@text-to-image/archive";
-import { ReadModel } from "@text-to-image/read-model";
+import { ReadModel, type IndexCatchUpResult } from "@text-to-image/read-model";
 
 interface ParsedArguments {
   positionals: string[];
@@ -46,6 +51,8 @@ interface CliResult {
   exitCode: number;
   value?: unknown;
 }
+
+export const MAX_STDIN_BYTES = 1024 * 1024;
 
 export async function run(argv: string[]): Promise<CliResult> {
   const parsed = parseArguments(argv);
@@ -63,6 +70,7 @@ export async function run(argv: string[]): Promise<CliResult> {
         "init",
         "validate",
         "index.rebuild",
+        "index.catch-up",
         "creation.create",
         "draft.show",
         "draft.update",
@@ -70,8 +78,12 @@ export async function run(argv: string[]): Promise<CliResult> {
         "asset.inspect",
         "revision.checkpoint",
         "generation.prepare",
+        "generation.preflight",
+        "generation.verify-prompt",
         "generation.mark-invocation-started",
         "generation.capture",
+        "generation.finalize",
+        "generation.finalize-happy-path",
         "generation.complete",
         "generation.fail",
         "generation.commit",
@@ -170,15 +182,24 @@ export async function run(argv: string[]): Promise<CliResult> {
       readModel.close();
     }
   }
+  if (command === "index" && subcommand === "catch-up") {
+    const readModel = new ReadModel(resolved.libraryRoot);
+    try {
+      await readModel.open({ rebuildIfMissing: false });
+      return success(await readModel.catchUp());
+    } finally {
+      readModel.close();
+    }
+  }
   if (command === "creation" && subcommand === "create") {
-    const request = readStdinJson<CreateCreationInput>();
+    const request = await readStdinJson<CreateCreationInput>();
     return success(createCreation(resolved.libraryRoot, request));
   }
   if (command === "draft" && subcommand === "show") {
     return success(readDraft(resolved.libraryRoot, stringOption(parsed, "creation")));
   }
   if (command === "draft" && subcommand === "update") {
-    const request = readStdinJson<{
+    const request = await readStdinJson<{
       content: string;
       expectedContentSha256: string;
       basedOnRevisionId?: string | null;
@@ -200,7 +221,7 @@ export async function run(argv: string[]): Promise<CliResult> {
     return success(inspectImageSource(stringOption(parsed, "source")));
   }
   if (command === "revision" && subcommand === "checkpoint") {
-    const request = readStdinJson<{
+    const request = await readStdinJson<{
       prompt: string;
       changeInstruction?: string;
       parentRevisionId?: string | null;
@@ -215,12 +236,39 @@ export async function run(argv: string[]): Promise<CliResult> {
       prepareGeneration(
         resolved.libraryRoot,
         stringOption(parsed, "creation"),
-        readStdinJson<PrepareGenerationRequest>(),
+        await readStdinJson<PrepareGenerationRequest>(),
       ),
     );
   }
+  if (command === "generation" && subcommand === "preflight") {
+    const request = parsed.options.has("request-stdin")
+      ? await readStdinJson<GenerationPreflightRequest>()
+      : ({} satisfies GenerationPreflightRequest);
+    const source = stringOption(parsed, "source", false);
+    if (source) request.sessionImagePaths = [...(request.sessionImagePaths ?? []), source];
+    return success(
+      preflightGeneration(resolved.libraryRoot, stringOption(parsed, "creation"), request),
+    );
+  }
+  if (command === "generation" && subcommand === "verify-prompt") {
+    assertPreparedPromptHash(
+      resolved.libraryRoot,
+      stringOption(parsed, "transaction"),
+      stringOption(parsed, "prompt-sha256"),
+    );
+    return success({ verified: true });
+  }
   if (command === "generation" && subcommand === "mark-invocation-started") {
-    markInvocationStarted(resolved.libraryRoot, stringOption(parsed, "transaction"));
+    const expectedPromptSha256 = stringOption(parsed, "prompt-sha256", false);
+    if (expectedPromptSha256) {
+      markInvocationStarted(
+        resolved.libraryRoot,
+        stringOption(parsed, "transaction"),
+        expectedPromptSha256,
+      );
+    } else {
+      markInvocationStarted(resolved.libraryRoot, stringOption(parsed, "transaction"));
+    }
     return success({ marked: true });
   }
   if (command === "generation" && subcommand === "capture") {
@@ -237,7 +285,7 @@ export async function run(argv: string[]): Promise<CliResult> {
       completeGeneration(
         resolved.libraryRoot,
         stringOption(parsed, "transaction"),
-        readStdinJson(),
+        await readStdinJson(),
       ),
     );
   }
@@ -246,15 +294,82 @@ export async function run(argv: string[]): Promise<CliResult> {
       failGeneration(
         resolved.libraryRoot,
         stringOption(parsed, "transaction"),
-        readStdinJson<FailGenerationRequest>(),
+        await readStdinJson<FailGenerationRequest>(),
       ),
     );
   }
   if (command === "generation" && subcommand === "commit") {
     return success(commitGeneration(resolved.libraryRoot, stringOption(parsed, "transaction")));
   }
+  if (
+    command === "generation" &&
+    (subcommand === "finalize" || subcommand === "finalize-happy-path")
+  ) {
+    const startedAt = Date.now();
+    const payload = await readStdinJson<{
+      outcome?: "succeeded" | "failed";
+      toolResult?: {
+        model: string | null;
+        parameters: Record<string, unknown>;
+        outputCount: number;
+      };
+      error?: {
+        code: string;
+        message: string;
+        retryable: boolean;
+        moderation?: { stage: "input" | "output" | "unknown"; categories: string[] };
+      };
+      workflowRunId?: string;
+      preToolMs?: number | null;
+      nonModelOverheadMs?: number | null;
+    }>();
+    const finalized = finalizeGenerationHappyPath(
+      resolved.libraryRoot,
+      stringOption(parsed, "transaction"),
+      payload,
+    );
+    const readModel = new ReadModel(resolved.libraryRoot);
+    try {
+      let index: IndexCatchUpResult;
+      try {
+        await readModel.open();
+        index = await readModel.catchUp();
+      } catch (error) {
+        index = {
+          status: "degraded",
+          processed: 0,
+          total: 0,
+          lastIndexedMarker: null,
+          failedMarker: null,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      const workflowRunId = payload.workflowRunId?.trim();
+      const progress = workflowRunId ? new WorkflowProgress(workflowRunId, startedAt) : null;
+      const telemetry = progress
+        ? (() => {
+            progress.stage("Archive committed");
+            if (index.status === "ready") progress.stage("Index ready");
+            return progress.telemetry({
+              terminalStatus: finalized.generation.status,
+              ...(finalized.generation.error?.code
+                ? { errorCode: finalized.generation.error.code }
+                : {}),
+              ...(payload.preToolMs !== undefined ? { preToolMs: payload.preToolMs } : {}),
+              postToolMs: Date.now() - startedAt,
+              ...(payload.nonModelOverheadMs !== undefined
+                ? { nonModelOverheadMs: payload.nonModelOverheadMs }
+                : {}),
+            });
+          })()
+        : null;
+      return success({ ...finalized, index, telemetry });
+    } finally {
+      readModel.close();
+    }
+  }
   if (command === "curation" && subcommand === "creation" && action === "update") {
-    const request = readStdinJson<{
+    const request = await readStdinJson<{
       expectedEntityRevision: number;
       patch: Parameters<typeof updateCreationCuration>[3];
     }>();
@@ -268,7 +383,7 @@ export async function run(argv: string[]): Promise<CliResult> {
     );
   }
   if (command === "curation" && subcommand === "image" && action === "update") {
-    const request = readStdinJson<{
+    const request = await readStdinJson<{
       expectedEntityRevision: number;
       patch: Parameters<typeof updateImageCuration>[3];
     }>();
@@ -369,15 +484,110 @@ function stringOption(
   throw new ArchiveError("LIBRARY_CONFIG_INVALID", `Missing required --${name} option.`);
 }
 
-function readStdinJson<T = Parameters<typeof completeGeneration>[2]>(): T {
-  const input = readFileSync(0, "utf8");
+export function readBoundedStdin(fd = 0, maxBytes = MAX_STDIN_BYTES): Promise<string> {
+  const stream = fd === 0 ? process.stdin : createReadStream("/dev/null", { fd, autoClose: false });
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      stream.pause();
+      stream.removeListener("data", onData);
+      stream.removeListener("end", onEnd);
+      stream.removeListener("error", onError);
+      if (fd === 0) {
+        process.stdin.unref?.();
+      } else {
+        stream.destroy();
+      }
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+    const finish = (input: Uint8Array) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        resolve(parseBoundedStdin(input, maxBytes));
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+    const onData = (chunk: Buffer | string) => {
+      const data = Buffer.from(chunk);
+      const lineFeed = data.indexOf(0x0a);
+      const payload = lineFeed === -1 ? data : data.subarray(0, lineFeed);
+      size += payload.length;
+      if (size > maxBytes) {
+        fail(
+          new ArchiveError("STDIN_TOO_LARGE", "stdin request exceeds the bounded payload limit.", {
+            maxBytes,
+          }),
+        );
+        return;
+      }
+      chunks.push(Buffer.from(payload));
+      if (lineFeed !== -1) {
+        const trailing = data.subarray(lineFeed + 1);
+        if (trailing.some((value) => !/\s/u.test(String.fromCharCode(value)))) {
+          fail(
+            new ArchiveError(
+              "STDIN_INVALID",
+              "stdin request contains more than one JSON value or trailing content.",
+            ),
+          );
+          return;
+        }
+        finish(Buffer.concat(chunks));
+      }
+    };
+    const onEnd = () => finish(Buffer.concat(chunks));
+    const onError = (error: Error) => fail(error);
+    stream.on("data", onData);
+    stream.once("end", onEnd);
+    stream.once("error", onError);
+  });
+}
+
+export function parseBoundedStdin(input: Uint8Array | string, maxBytes = MAX_STDIN_BYTES): string {
+  const bytes = Buffer.from(input);
+  const lineFeed = bytes.indexOf(0x0a);
+  const payload = lineFeed === -1 ? bytes : bytes.subarray(0, lineFeed);
+  if (payload.length > maxBytes) {
+    throw new ArchiveError("STDIN_TOO_LARGE", "stdin request exceeds the bounded payload limit.", {
+      maxBytes,
+    });
+  }
+  if (lineFeed !== -1) {
+    const trailing = bytes.subarray(lineFeed + 1);
+    if (trailing.some((value) => !/\s/u.test(String.fromCharCode(value)))) {
+      throw new ArchiveError(
+        "STDIN_INVALID",
+        "stdin request contains more than one JSON value or trailing content.",
+      );
+    }
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(payload);
+  } catch {
+    throw new ArchiveError("STDIN_INVALID", "stdin request is not valid UTF-8.");
+  }
+}
+
+async function readStdinJson<T = Parameters<typeof completeGeneration>[2]>(): Promise<T> {
+  const input = await readBoundedStdin();
   if (!input.trim()) {
-    throw new ArchiveError("LIBRARY_CONFIG_INVALID", "Expected one JSON request on stdin.");
+    throw new ArchiveError("STDIN_INVALID", "Expected one JSON request on stdin.");
   }
   try {
     return JSON.parse(input) as T;
   } catch {
-    throw new ArchiveError("LIBRARY_CONFIG_INVALID", "stdin request is not valid JSON.");
+    throw new ArchiveError("STDIN_INVALID", "stdin request is not valid JSON.");
   }
 }
 

@@ -1,7 +1,14 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
-import { assertLibraryManifestPresent, latestMarkerId, rebuildReadModel } from "./rebuild.js";
+import {
+  assertLibraryManifestPresent,
+  catchUpReadModel,
+  latestMarkerId,
+  markerLagCount,
+  rebuildReadModel,
+} from "./rebuild.js";
+import { READ_MODEL_VERSION } from "./schema.js";
 import type {
   GalleryQuery,
   IndexedCreation,
@@ -10,6 +17,7 @@ import type {
   IndexedImage,
   IndexedRevision,
   IndexStatus,
+  IndexCatchUpResult,
 } from "./types.js";
 
 type SqlValue = string | number | bigint | Uint8Array | null;
@@ -88,6 +96,8 @@ export class ReadModel {
   readonly #path: string;
   #database: DatabaseSync | null = null;
   #rebuildPromise: Promise<void> | null = null;
+  #catchUpPromise: Promise<IndexCatchUpResult> | null = null;
+  #degradedError: string | null = null;
 
   constructor(libraryRoot: string) {
     this.#root = resolve(libraryRoot);
@@ -98,14 +108,27 @@ export class ReadModel {
     await assertLibraryManifestPresent(this.#root);
     try {
       this.#database = new DatabaseSync(this.#path, { readOnly: true });
-      this.#database.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
+      const schema = this.#database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value?: unknown } | undefined;
+      if (schema?.value !== String(READ_MODEL_VERSION)) {
+        throw new Error("Read model schema version is unsupported.");
+      }
+      const markerCursor = this.#database
+        .prepare("SELECT value FROM meta WHERE key = 'indexed_marker_ids'")
+        .get() as { value?: unknown } | undefined;
+      if (!markerCursor) {
+        this.close();
+        await this.rebuild();
+        return;
+      }
     } catch (error) {
       this.close();
       if (options.rebuildIfMissing === false) throw error;
       await this.rebuild();
       return;
     }
-    if ((await this.status()).lagCount > 0) await this.rebuild();
+    if ((await this.status()).lagCount > 0) await this.catchUp();
   }
 
   close(): void {
@@ -123,11 +146,43 @@ export class ReadModel {
     }
   }
 
+  async catchUp(): Promise<IndexCatchUpResult> {
+    if (this.#catchUpPromise) return this.#catchUpPromise;
+    this.#catchUpPromise = this.#catchUpNow();
+    try {
+      return await this.#catchUpPromise;
+    } finally {
+      this.#catchUpPromise = null;
+    }
+  }
+
+  async #catchUpNow(): Promise<IndexCatchUpResult> {
+    const current = this.#database;
+    if (!current) {
+      await this.rebuild();
+      const status = await this.status();
+      return {
+        status: status.lagCount === 0 ? "ready" : "degraded",
+        processed: 0,
+        total: 0,
+        lastIndexedMarker: status.lastIndexedMarker,
+        failedMarker: status.lagCount === 0 ? null : status.latestArchiveMarker,
+        ...(status.error ? { error: status.error } : {}),
+      };
+    }
+    this.close();
+    const result = await catchUpReadModel(this.#root);
+    this.#degradedError = result.error ?? null;
+    this.#database = new DatabaseSync(this.#path, { readOnly: true });
+    return result;
+  }
+
   async #replaceReadModel(): Promise<void> {
     await rebuildReadModel(this.#root);
     const replacement = new DatabaseSync(this.#path, { readOnly: true });
     const previous = this.#database;
     this.#database = replacement;
+    this.#degradedError = null;
     previous?.close();
   }
 
@@ -144,17 +199,34 @@ export class ReadModel {
         latestArchiveMarker: latest,
         lastIndexedMarker: null,
         lagCount: latest ? 1 : 0,
+        ...(this.#degradedError ? { degraded: true, error: this.#degradedError } : {}),
       };
     }
     const row = this.#db()
       .prepare("SELECT value FROM meta WHERE key = 'last_indexed_marker'")
       .get() as SqlRow | undefined;
     const indexed = row ? stringColumn(row, "value") : null;
+    const indexedIdsRow = this.#db()
+      .prepare("SELECT value FROM meta WHERE key = 'indexed_marker_ids'")
+      .get() as SqlRow | undefined;
+    let indexedIds: string[] = [];
+    if (indexedIdsRow && typeof indexedIdsRow.value === "string") {
+      try {
+        const parsed: unknown = JSON.parse(indexedIdsRow.value);
+        if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+          indexedIds = parsed;
+        }
+      } catch {
+        indexedIds = [];
+      }
+    }
+    const lagCount = await markerLagCount(this.#root, indexed, indexedIds);
     return {
       available: true,
       latestArchiveMarker: latest,
       lastIndexedMarker: indexed,
-      lagCount: latest === indexed ? 0 : latest ? 1 : 0,
+      lagCount,
+      ...(this.#degradedError ? { degraded: true, error: this.#degradedError } : {}),
     };
   }
 

@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 12
+Phase 13
 
 ## Phases
 
@@ -135,9 +135,41 @@ Phase 12
 - [x] 完成文档、格式、链接与 Git 差异验证.
 - **Status:** completed
 
+### Phase 13: Generation Workflow Latency and Progress
+
+- [x] 复盘真实 Generation task 的 `16m38s` 用户端到端耗时, 区分已观测工具时间与未观测 Codex orchestration.
+- [x] 通过 `$grill-with-docs` 确认 SLO、计时、stdin framing、Preflight、Prompt hash gate、增量 index、CLI 分层、progress、telemetry 与测试边界.
+- [x] 将产品需求、Generation Workflow 与测试策略切回 `draft`, 新增 ADR 0012 并形成实施契约.
+- [x] 实现 bounded `LF-or-EOF` stdin reader 与 byte-identical Prompt hash gate.
+- [x] 实现只读 `generation preflight`、capture staged path 与高层 happy-path finalize command.
+- [x] 实现增量 Commit Marker catch-up 与 index degraded recovery contract.
+- [x] 更新 Generation Skill 的单一 Prompt、真实阶段进度和双层 SLO reporting.
+- [x] 补充 unit、integration、fault injection、Skill eval 与 release-scale performance tests.
+- [x] 执行 focused 与 root verification, 记录实测结果并恢复正式文档为 `accepted`.
+- **Status:** completed
+
+#### Confirmed Contract
+
+1. warm user end-to-end latency 目标为图片模型耗时加不超过 30 秒非模型开销; pre-tool p95 不超过 20 秒, post-tool p95 不超过 10 秒.
+2. Codex UI 与仓库 span 使用同一个 `workflowRunId`, 但仓库时间不得替代用户端到端时间.
+3. stdin request 以首个 `LF` 或 EOF 结束, 上限 1 MiB, Prompt 不进入 argv、process list、shell history 或临时脚本.
+4. Prepare Prompt 与 tool argument 必须 UTF-8 byte-identical, 并在 invocation marker 前通过 SHA-256 gate.
+5. `generation preflight` 保持只读; happy path 使用高层 command, recovery 继续使用现有低层状态机 primitives.
+6. 正常路径增量投影 Commit Marker; full rebuild 只用于 cache 缺失、Schema 变化、corruption 或显式 recovery.
+7. progress 只显示真实阶段和累计耗时, 无 provider event 时不生成百分比或 ETA.
+8. Workflow telemetry 不进入 Archive; fake generator 承担 deterministic CI SLO gate, 真实模型只记录 observation.
+
+#### Implementation Order
+
+1. Contract first: stdin framing、Prompt hash、Preflight response、capture response、index catch-up result 与 typed error contract.
+2. Archive and read model: 复用现有 transaction primitives, 增加增量 Marker projection 和 atomic `last_indexed_marker`.
+3. CLI orchestration: 增加只读 Preflight 与高层 post-tool happy path, 保留低层 recovery commands.
+4. Skill: 单次构造 effective Prompt, transaction-scoped storage, hash gate、真实 progress 与双层 SLO report.
+5. Verification: fake generator performance gate、fault injection、release-scale dataset、real model observation 与 docs cross-check.
+
 ## Remaining Design Questions
 
-无. Phase 12 用户手册已经完成并通过验证.
+无. Phase 13 性能重设计的实现与验证已完成, 后续仅在实际 provider latency 或新的错误证据出现时增补指标与回归用例.
 
 ## Errors Encountered
 

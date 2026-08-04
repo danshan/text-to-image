@@ -28,11 +28,17 @@ compatibility: Requires the repository assetctl npm script, built-in image_gen t
 ### 1. Preflight
 
 1. 从 repository root 工作, 不修改任何全局 Codex 配置.
-2. 运行 `npm run assetctl -- capabilities --format json`, 要求 Library format `1` 与 Generation Workflow `1`.
-3. 运行 `npm run assetctl -- library resolve --format json`, 只使用返回的 canonical `libraryRoot`.
-4. 运行 `npm run assetctl -- recover list --library <library-root> --format json`. 向用户报告未恢复 transaction, 但不自动处理或阻断无关 Creation.
-5. 在本次工作流中固定 resolver 返回的 `libraryRoot`; 后续命令不得重新解析、切换或使用会话中的旧 Library path.
-6. 验证 `creationId`, Prompt Draft、可选 parent Revision 与 Reference roles. 已提交 Image Asset 可以直接作为 Reference; Session Image 必须先按下一节完成 ingress.
+2. 运行一次只读的 `generation preflight --creation <creation-id> --request-stdin --format json`:
+
+```bash
+npm run assetctl -- generation preflight --creation <creation-id> --request-stdin --format json
+```
+
+该 command 一次完成 capability check、Library resolution、quick validation、recovery listing、Draft snapshot、Reference 校验与全部 Session Image inspection, 并返回 canonical `libraryRoot`. 它不创建 transaction、不导入 Image Asset、不修改 Archive.
+
+3. 保存这次 preflight 的完整 snapshot 与 canonical `libraryRoot`; 后续命令必须复用它, 不得再次运行 capabilities、resolver、recover list、Draft read 或 asset inspection.
+
+4. 向用户报告 snapshot 中的未恢复 transaction, 但不自动处理或阻断无关 Creation. 验证 `creationId`, Prompt Draft、可选 parent Revision 与 Reference roles. 已提交 Image Asset 可以直接作为 Reference; Session Image 必须先按下一节完成 ingress.
 
 ### 2. Import Materialized Session Images
 
@@ -40,12 +46,7 @@ compatibility: Requires the repository assetctl npm script, built-in image_gen t
 
 1. 按用户提供或会话出现顺序稳定编号 Session Image. 根据用户明确措辞解析 `roles` 与可选 `guidance`; 不能只根据图片内容猜测 role. 意图不足时先询问, 不设置默认 role.
 2. 如果 Session Image 只有 opaque session handle, 且宿主没有暴露原始 bytes 或可读取本地 path, 以 `SESSION_IMAGE_NOT_MATERIALIZED` 停止. 不调用 `image_gen`, 不创建 Generation transaction, 不要求用户重复保存一个其实已经具有可读路径的文件.
-3. 对全部 materialized Session Image 先执行只读 inspection, 此阶段不导入任何图片:
-
-```bash
-npm run assetctl -- asset inspect --library <library-root> --source <session-image-path> --format json
-```
-
+3. 复用 Preflight snapshot 中与 source 顺序对应的 inspection 结果. 不重复调用 `asset inspect` 或重新读取同一 source.
 4. 任一 inspection 失败时整体停止, 不忽略失败图片后继续. 区分 `IMAGE_SOURCE_MISSING`, `IMAGE_SOURCE_UNREADABLE`, `IMAGE_UNSUPPORTED` 与 `IMAGE_INVALID`; sandbox permission denial 不能误报为 missing, 应请求目标文件的 scoped read access 后有限重试一次.
 5. 全部 inspection 成功后, 按相同顺序逐个导入:
 
@@ -53,13 +54,13 @@ npm run assetctl -- asset inspect --library <library-root> --source <session-ima
 npm run assetctl -- asset import --library <library-root> --source <canonical-source-path> --format json
 ```
 
-6. 比较 import 与 inspection 返回的 `assetSha256`. 不一致表示 source 在两步之间发生变化; 以 `SESSION_IMAGE_CHANGED` 停止, 不创建 Generation transaction. 已经提交的独立 `import_asset` transaction 保留, 不删除或回滚.
+6. 比较 import 与 Preflight inspection 返回的 `assetSha256`. 不一致表示 source 在两步之间发生变化; 以 `SESSION_IMAGE_CHANGED` 停止, 不创建 Generation transaction. 已经提交的独立 `import_asset` transaction 保留, 不删除或回滚.
 7. 使用 import 返回的 `assetSha256` 构造 Reference relation. 内容寻址复用不是错误; `reused: true` 与新导入都可以继续.
 8. 任一 import 失败时整体停止 Generation. 已提交 Image Asset 保留; 重试依靠内容寻址去重.
 
 ### 3. Freeze Effective Inputs
 
-1. 读取 Creation 的 `prompt-draft.md` 与 `prompt-draft.json`.
+1. 使用 Preflight 返回的 Draft snapshot, 不重新读取 `prompt-draft.md` 或 `prompt-draft.json`.
 2. 根据 Draft, `changeInstruction` 和 Reference guidance 构造完整 effective prompt.
 3. 常规质量补足可以直接执行. 若推断会改变主体, 构图目标, 用途或风格方向, 先展示具体变化并等待用户确认.
 4. 保留 `changeInstruction` 与 effective prompt 的区别. 后者是实际发送给图片生成工具并归档的 Prompt Revision.
@@ -67,21 +68,23 @@ npm run assetctl -- asset import --library <library-root> --source <canonical-so
 
 ### 4. Prepare Through Stdin
 
-按 [CLI contract](references/cli-contract.md) 构造 prepare request. 启动下面的命令, 再通过该进程 stdin 发送一个 JSON value 和 EOF. Prompt 或 tool result 不得放入 argv, shell pipeline, temporary shell script 或 shell history.
+按 [CLI contract](references/cli-contract.md) 构造 prepare request. 启动下面的命令, 再通过该进程 stdin 发送一个 JSON value 和单个 `LF`. Prompt 或 tool result 不得放入 argv, shell pipeline, temporary shell script 或 shell history.
 
 ```bash
 npm run assetctl -- generation prepare --library <library-root> --creation <creation-id> --request-stdin
 ```
 
-保存 stdout 返回的 `transactionId`, `revisionId`, `generationId` 和 `referencePaths`. stdout 必须是单个 JSON value; diagnostic 只从 stderr 读取.
+保存 stdout 返回的 `transactionId`, `revisionId`, `generationId`, `promptSha256` 和 `referencePaths`. stdout 必须是单个 JSON value; diagnostic 只从 stderr 读取. stdin payload 以首个 `LF` 或 EOF 结束, 最大 1 MiB.
 
 ### 5. Mark Before Invocation
 
-在调用图片工具前运行:
+在调用图片工具前只运行一次带 hash gate 的 marker command. 它会在写入 `invocation_started` 前校验 Prepare 返回的 Prompt bytes:
 
 ```bash
-npm run assetctl -- generation mark-invocation-started --library <library-root> --transaction <transaction-id>
+npm run assetctl -- generation mark-invocation-started --library <library-root> --transaction <transaction-id> --prompt-sha256 <prompt-sha256> --format json
 ```
+
+Hash gate 失败时保持 `prepared`, 不调用图片工具. `generation verify-prompt` 仅用于独立诊断或 fault-injection, 不属于 happy path. `promptSha256` 只校验同一份 UTF-8 bytes, 不接受经过重排或规范化的 Prompt.
 
 从这一刻起, 不确定结果必须保守归类为 `interrupted`; 不得自动重试.
 
@@ -103,7 +106,7 @@ npm run assetctl -- generation mark-invocation-started --library <library-root> 
 npm run assetctl -- generation capture --library <library-root> --transaction <transaction-id> --source <generated-image-path>
 ```
 
-使用 `view_image` 检查每个 staged Output. 记录可见质量问题用于最终报告, 但仍归档全部 Output. 不删除 built-in tool 的原始输出.
+使用 capture 返回的 `stagedPath` 直接调用 `view_image` 检查每个 staged Output. 记录可见质量问题用于最终报告, 但仍归档全部 Output. 不删除 built-in tool 的原始输出, 也不扫描 recovery request 或 staging 目录寻找路径.
 
 如果 tool 成功但没有可解析的本地 path, 停止流程并按 recovery reference 报告 transaction; 不伪造 Output 或 success.
 
@@ -127,6 +130,14 @@ npm run assetctl -- generation fail --library <library-root> --transaction <tran
 npm run assetctl -- generation commit --library <library-root> --transaction <transaction-id>
 ```
 
+正常 happy path 可以使用高层命令完成 `complete | fail`, `commit` 与增量 index catch-up:
+
+```bash
+npm run assetctl -- generation finalize --library <library-root> --transaction <transaction-id> --result-stdin --format json
+```
+
+Recovery、fault injection 和精确状态检查继续使用上述低层命令. 高层命令返回 `index.status: "degraded"` 时 Generation 已提交但不得报告 `index ready`; 后续只追平 Commit Marker, 不重复调用图片工具.
+
 Commit 失败时不再次调用图片工具. 使用 recovery inspection 判断幂等 commit 或 quarantine.
 
 如果图片工具明确返回 safety rejection, 使用 `IMAGE_GENERATION_SAFETY_REJECTED` 和可选 bounded `moderation` metadata. Output-stage rejection 必须表述为生成结果被拒绝, 不得断言 Prompt violation. Generation 成功、失败或中断后都不得用 effective Prompt 覆盖用户 Draft; commit 只在 Draft hash 未变化时更新 `basedOnRevisionId`.
@@ -143,6 +154,7 @@ Commit 失败时不再次调用图片工具. 使用 recovery inspection 判断�
 - Reference Image roles 与 guidance 摘要.
 - 每个 Session Image 的 source index、imported 或 reused 状态与最终 Image Asset SHA-256; 不暴露 opaque internal handle.
 - Draft concurrent edit, index degraded, quality observation 或 recovery warning.
+- `workflowRunId`, observed stage durations and the two-layer SLO result. Report real stages and elapsed time only; without provider progress events, do not print percentage or ETA. A wait longer than 60 seconds may print a heartbeat with elapsed duration.
 - Draft 正文保持用户编写的原文和语言; effective Prompt 仅通过 Prompt Revision 报告.
 
 不要把 tool success 等同于 Archive success. 只有有效 Commit Marker 发布后才能报告 committed.

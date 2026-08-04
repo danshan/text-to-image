@@ -4,6 +4,8 @@
 
 effective prompt 是实际发送给 built-in image generation 的完整文本, 也是不可变 Prompt Revision 的 `prompt.md`. `changeInstruction` 只记录用户要求的变化, 两者不能互相替代.
 
+Skill 在内存中只构造一次 effective prompt, 以原始 UTF-8 bytes 计算 SHA-256, 并把同一份字符串同时交给 `generation prepare` 与 `image_gen.imagegen`. Prepare 返回的 `promptSha256` 必须由带 hash gate 的 invocation marker 在写入 marker 前校验; `generation verify-prompt` 仅用于独立诊断或 fault-injection. 不做 Unicode、空白或换行规范化.
+
 Prompt Draft 是用户维护的当前工作稿. Skill 可以基于 Draft 构造 effective prompt, 但 commit 不得用 effective prompt 替换 Draft 正文或语言; effective prompt 只属于该次不可变 Prompt Revision.
 
 从以下输入构造 effective prompt:

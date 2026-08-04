@@ -263,6 +263,33 @@
   - `git diff --check`: passed.
   - 文档图片存在性, MIME 和尺寸检查: passed, 1 PNG 示意图和 3 JPEG Web UI screenshots.
 
+### Phase 13: Generation Workflow Latency and Progress
+
+- **Status:** completed
+- **Started:** 2026-08-04
+- 已完成:
+  - 复盘一次真实带 `subject` Reference Image 的 Generation task. Codex UI 用户端到端耗时为 `16m38s`; 可见工具 `Wall time` 手工汇总约 `8m30s`, 剩余约 `8m08s` 属于当前未分段观测的 Codex reasoning、调度、序列化与渲染时间.
+  - 实测当前 `npm run assetctl -- capabilities` 三次为 `0.23-0.41s`, 直接 `tsx` 为 `0.11-0.12s`; 当前 63 文件、10 MiB Library quick validation 为 `0.75s`. 结论是 CLI 计算不是主要瓶颈, 不优先引入 daemon 或 executable 优化.
+  - 确认本次最大可消除错误是 CLI `readFileSync(0)` 等待 EOF, 而 Codex PTY 无法可靠关闭 stdin, 导致多次约 28 秒等待和 fallback pipeline.
+  - 通过 `$grill-with-docs` 逐项确认双层 SLO、`LF-or-EOF` stdin framing、只读 Preflight、byte-identical Prompt hash gate、增量 Marker catch-up、CLI 分层、stage progress、telemetry boundary 与 deterministic performance gate.
+  - 新增 ADR 0012, 明确 Workflow telemetry 不进入 immutable Archive.
+  - 将 `docs/product/requirements.md`、`docs/design/generation-workflow.md` 与 `docs/development/testing.md` 切回 `draft`, 同步文档索引和 Phase 13 实施计划.
+- 已完成:
+  - CLI 使用 bounded `LF-or-EOF` reader, 以 1 MiB 上限、严格 UTF-8、单 JSON value 和 trailing-content rejection 替代 `readFileSync(0)` EOF 等待.
+  - Generation Prepare 返回 `promptSha256`; 带 hash 的 invocation marker 在 marker 前 fail closed, mismatch 保持 `prepared`. `generation verify-prompt` 仅保留为独立诊断与 fault-injection command.
+  - `generation preflight` 只读返回 canonical Library、quick validation、Draft snapshot、recovery warning 和 Session Image inspections; capture 返回 canonical `stagedPath`; `generation finalize` 复用 complete/fail、commit 与 Read Model catch-up.
+  - Read Model 增加按 Commit Marker 增量 catch-up, 每个 Marker 在单个 SQLite transaction 内原子更新 `last_indexed_marker`; projection failure 返回 `degraded` 并保留上一 cursor, 后续可继续追平.
+  - Generation Skill 与 CLI contract 补充单一 Prompt、真实 stage/elapsed/heartbeat、无 fake percentage/ETA、双层 SLO 和 telemetry boundary. Workflow telemetry 只作为 transient report, 不进入 Archive.
+  - 新增 `WorkflowProgress`、SLO evaluator、stdin/preflight/hash/finalize/index focused tests 与 deterministic fake workflow performance gate.
+- 验证:
+  - `npm test`: passed, 3 Vitest files / 11 tests, Hook and Skill 30 tests, Web 10 files / 23 tests.
+  - `npm run test:integration`: passed, 5 files / 42 tests.
+  - `npm run test:performance:smoke`: passed, 2 files / 3 tests; synthetic rebuild 692 ms, warm query p95 1.36 ms, workflow p95 pre-tool 170 ms, post-tool 342 ms, non-model overhead 495 ms.
+  - `npm run test:performance`: passed, release scale 2,000 Creations / 30,000 Generations / 10,000 Image Assets; rebuild 14,566 ms, warm query p95 48.88 ms, workflow p95 pre-tool 140 ms, post-tool 353 ms, non-model overhead 491 ms.
+  - `npm run build`, `npm run typecheck`, `npm run lint` 与 `npm run format:check`: passed.
+  - `npm run docs:check`: passed, 34 Markdown files and 12 ADRs; formal Markdown statuses restored to `accepted`.
+  - `git diff --check`: passed.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |

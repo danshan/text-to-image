@@ -1,6 +1,6 @@
 # CLI Contract
 
-所有结构化敏感 payload 都通过 stdin 传递. 在 Codex 中启动带 PTY 的 `npm run assetctl -- ...-stdin` 进程, 再把一个 JSON value 写入 stdin 并发送 EOF. 不用 `echo`, `printf`, heredoc, pipe 或 argv 携带 Prompt 和 tool result.
+所有结构化敏感 payload 都通过 stdin 传递. Canonical framing 是在带 PTY 的 `npm run assetctl -- ...-stdin` 进程中写入单个 JSON value 并发送一个 `LF`; EOF-only input 仅作为兼容行为. 不用 `echo`, `printf`, heredoc, pipe 或 argv 携带 Prompt 和 tool result.
 
 ## Capability and Resolution
 
@@ -16,6 +16,16 @@ Capabilities 必须声明支持 Library format `1`, Generation Workflow `1`, 以
   "libraryRoot": "/canonical/library/root"
 }
 ```
+
+## Generation Preflight
+
+Command:
+
+```bash
+npm run assetctl -- generation preflight --creation <creation-id> --request-stdin --format json
+```
+
+The optional stdin request may contain `sessionImagePaths`, `references`, and `basedOnRevisionId`. The command resolves and validates capabilities and the Library once, then returns the fixed canonical `libraryRoot`, quick validation, Draft snapshot, pending recovery warning, and every source inspection result. It must not create a transaction, import an asset, or write a Commit Marker. Reuse this snapshot for the rest of the workflow; do not repeat resolver, recovery, Draft, or source inspection commands.
 
 ## Prepare
 
@@ -57,6 +67,7 @@ stdout response:
   "transactionId": "9f386ef3-b8ce-4197-ad14-a2fda4c19754",
   "revisionId": "1567f72f-7a13-45cd-acd3-84a0090547e1",
   "generationId": "755fc2f9-81a8-4d3d-84a0-09c54b12ed21",
+  "promptSha256": "da88d518f0c3b93057393511685b93423f2b350c2e4ac84f7b8b64346a54b552",
   "referencePaths": [
     "/canonical/library/root/assets/sha256/92/92b7b13cbeef65f8a258d705e19916a5917865543398eff786c749678a2d820a.png"
   ]
@@ -64,6 +75,14 @@ stdout response:
 ```
 
 `referencePaths` 的顺序必须与 request `references` 一致.
+
+The happy path performs the byte gate inside one marker command:
+
+```bash
+npm run assetctl -- generation mark-invocation-started --library <library-root> --transaction <transaction-id> --prompt-sha256 <prompt-sha256> --format json
+```
+
+The gate must fail closed while the transaction remains `prepared`; the image tool must not be called after a mismatch. `generation verify-prompt` remains available only as a standalone diagnostic or fault-injection command.
 
 ## Session Image Ingress
 
@@ -94,6 +113,8 @@ npm run assetctl -- asset import --library <library-root> --source <canonical-so
 ```
 
 每次 import 是独立 committed transaction. Skill 必须比较 inspection 与 import 的 `assetSha256`; 不一致时停止 Generation. `IMAGE_SOURCE_MISSING` 表示 path 不存在, `IMAGE_SOURCE_UNREADABLE` 表示权限或文件类型无法读取, `IMAGE_UNSUPPORTED` 表示明确不支持的图片类型, `IMAGE_INVALID` 表示 payload 无效. opaque session handle 不进入 CLI, 由 Skill 报告 `SESSION_IMAGE_NOT_MATERIALIZED`.
+
+Capture stdout includes `stagedPath` and `relativePath`. Use `stagedPath` directly for `view_image`; do not rescan staging or recovery metadata.
 
 ## Complete
 
@@ -150,3 +171,11 @@ npm run assetctl -- generation commit --library <library-root> --transaction <tr
 ```
 
 只把 stdout 中 `committed: true` 且存在有效 Commit Marker 视为 Archive success. Commit 后保留用户 Prompt Draft 的原文和语言, hash 未变化时只更新 `basedOnRevisionId`; effective Prompt 只存在于 immutable Prompt Revision. Draft hash 冲突和 index failure 是 warning, 不回滚已经提交的 Generation.
+
+## Happy-path Finalize
+
+```bash
+npm run assetctl -- generation finalize --library <library-root> --transaction <transaction-id> --result-stdin --format json
+```
+
+This command composes the existing terminal finalize, Commit Marker publication, and incremental Read Model catch-up. Recovery and fault-injection commands remain the low-level interface. A returned `index.status` of `degraded` means the Generation is committed but the index is not ready.

@@ -207,10 +207,12 @@ Prompt 迭代的核心原则是: 保留稳定部分, 每次只改变一个主要
 页面中的主要区域:
 
 - `Prompt Draft`: 当前可修改工作稿.
-- `Prompt History`: 已经用于生成的不可变历史版本.
-- `Generation Timeline`: 每一次真实调用及其状态和输出.
+- `Prompt History`: 不可变历史版本. 点击一个 Revision 后, 页面会按 Generation 分组展开它实际使用过的 Reference Images、roles 与 guidance.
+- `Generation Timeline`: 每一次真实调用及其状态、对应 Prompt Revision、Reference Images 和输出. 点击一条记录会反向定位 Prompt History.
 - `Curation`: 标题、状态、标签、备注和收藏.
 - `Prepare generation`: 可复制到 Codex 的标准生成指令.
+
+页面默认聚焦最新 Generation. 一个 Prompt Revision 可以对应零个或多个 Generation; 多次 variant、retry 或 Replay 不会被合并. 选择 Revision 时, Timeline 会保留全部记录并高亮所有关联 Generation. 当前 Focus 会写入 URL, 因而刷新、复制链接或从详情页返回后仍能恢复.
 
 保存 Draft 只修改工作稿, 不会自动生成图片. 保存后, 点击 `Copy instruction`, 把指令粘贴到 Codex, 或直接明确调用 Skill.
 
@@ -240,7 +242,7 @@ Prompt 迭代的核心原则是: 保留稳定部分, 每次只改变一个主要
 
 ### 6.4 比较历史版本
 
-在 `Prompt History` 中勾选两个 Revision, 页面会显示差异. 建议比较相邻版本, 并关注:
+在 `Prompt History` 中使用独立的 `Compare` checkbox 勾选两个 Revision, 页面会显示差异. 点击 Revision 卡片只改变 provenance Focus, 不会改变 Compare 选择. 建议比较相邻版本, 并关注:
 
 - 哪些身份约束被新增或删除.
 - 构图、镜头或画幅是否改变.

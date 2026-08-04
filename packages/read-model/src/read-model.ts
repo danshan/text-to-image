@@ -526,15 +526,28 @@ export class ReadModel {
     return row ? toImage(row) : null;
   }
 
-  getReferenceRelations(
-    sha256: string,
-  ): Array<{ generationId: string; creationId: string; roles: string[]; guidance: string | null }> {
+  getReferenceRelations(sha256: string): Array<{
+    generationId: string;
+    creationId: string;
+    promptRevisionId: string;
+    roles: string[];
+    guidance: string | null;
+  }> {
     const rows = this.#db()
-      .prepare("SELECT * FROM generation_references WHERE asset_sha256 = ? ORDER BY generation_id")
+      .prepare(
+        `
+        SELECT reference.*, generation.prompt_revision_id
+        FROM generation_references reference
+        JOIN generations generation ON generation.id = reference.generation_id
+        WHERE reference.asset_sha256 = ?
+        ORDER BY reference.generation_id
+      `,
+      )
       .all(sha256) as SqlRow[];
     return rows.map((row) => ({
       generationId: stringColumn(row, "generation_id"),
       creationId: stringColumn(row, "creation_id"),
+      promptRevisionId: stringColumn(row, "prompt_revision_id"),
       roles: parseJson<string[]>(row.roles_json, []),
       guidance: nullableStringColumn(row, "guidance"),
     }));

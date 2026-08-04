@@ -322,15 +322,39 @@
   - 真实 observation 从 Preflight 到 Finalize return 为 `226.28s`: pre-tool `40.62s`, provider `152.86s`, post-tool `32.80s`. Archive telemetry 到 index ready 为 `225.54s`. 相比原始 `12m17s` 缩短约 `8m31s`.
   - 真实单样本 pre-tool 和 post-tool 未达到 `20s/10s`; Codex UI authoritative duration 未暴露, user-facing SLO 为 `unknown`. 不以该样本宣称 provider 或 workflow p95.
 
+### Phase 15: Prompt, Generation, and Reference Provenance Navigation
+
+- **Status:** completed
+- **Started:** 2026-08-04
+- **Completed:** 2026-08-04
+- 已完成:
+  - 使用 `$grill-with-docs` 确认双区同步联动、多次 Generation 高亮、Reference Image usage 分组、URL 深链、默认 Focus、Prompt Compare 独立状态与 Image Detail 反向入口.
+  - 核对现有 Archive 和 read model 已保存 `Generation.promptRevisionId` 与 `Generation.references`; 本阶段不新增 Archive 实体或持久化关系.
+  - 将产品需求、Web UI、用户手册与测试策略切回 `draft`.
+  - Creation 页面使用 `revision` 与 `generation` query parameters 同步 Prompt History 与 Generation Timeline, 默认 Focus 最新 Generation, 并保持 Prompt Compare 独立.
+  - Focused Revision 按 Generation usage 展开 Reference Image、roles 与 guidance; Timeline 保留完整 chronology 并显示 Prompt link 与 Reference thumbnails.
+  - Generation Detail 返回精确 Creation provenance Focus; Image Detail 的每条 used-as-reference relation 同时链接 Generation 与 Prompt Revision.
+  - Read model 通过 Generation join 派生 `promptRevisionId`, Archive Schema、writer 和持久化格式保持不变.
+  - 更新产品需求、Web UI、用户手册、测试策略、findings、task plan、component/integration/E2E tests 与 Chromium/WebKit visual snapshots.
+- 验证:
+  - `npm test`: passed, root Vitest 3 files / 11 tests, Hook and Skill 31 tests, Web 11 files / 24 tests.
+  - `npm run test:integration`: passed, 6 files / 46 tests.
+  - `npm run test:e2e`: Chromium 与 WebKit provenance、URL deep link、Prompt Compare 和 visual snapshots 通过; WebKit 保留 1 个既有 mutation skip.
+  - `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check` 与 `npm run docs:check`: passed.
+- 错误:
+  - 直接运行 read model workspace test 时 integration pattern 被默认配置排除; 改用 root integration Vitest config 后 6 tests 通过.
+  - Playwright 在默认 sandbox 内因 macOS Mach port 权限失败; 在 scoped outside-sandbox execution 中通过.
+  - 完整 E2E 首轮仍断言旧的隐藏 Compare label; 更新为可见 `Compare` label 后 Chromium 与 WebKit 用例通过.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |
 | ----------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------ |
 | Clean install                       | Lockfile can reproduce dependencies                                                 | `npm ci` installed 397 packages                                                                | pass   |
 | Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                                      | pass   |
-| Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 53-module Web build passed                  | pass   |
+| Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 56-module Web build passed                  | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 3 root files / 11 tests, 31 Hook/Skill tests and 23 Web tests passed                           | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 3 root files / 11 tests, 31 Hook/Skill tests and 24 Web tests passed                           | pass   |
 | Integration                         | Archive、read model and HTTP security pass                                          | 6 files, 46 tests passed                                                                       | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
 | Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
@@ -370,13 +394,16 @@
 | 2026-08-03 | Playwright browser binaries were not installed                       |       1 | Installed the pinned Chromium and WebKit binaries                 |
 | 2026-08-03 | Browser processes aborted inside the filesystem sandbox              |       1 | Re-ran E2E with scoped outside-sandbox execution; 11 passed       |
 | 2026-08-03 | E2E server still constructed the removed static Library dependencies |       1 | Updated it to use `LibraryRuntime`; the complete E2E suite passed |
+| 2026-08-04 | Direct workspace test excluded read model integration files          |       1 | Used the root integration Vitest config with the exact test path  |
+| 2026-08-04 | Playwright browser launch was denied by the macOS sandbox            |       1 | Re-ran the scoped browser suite outside the sandbox               |
+| 2026-08-04 | E2E Prompt Compare assertion used the removed hidden label           |       1 | Asserted visible `Compare` and reran Chromium and WebKit          |
 
 ## 5-Question Reboot Check
 
-| Question             | Answer                                                                                                               |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Where am I?          | Phase 14 completed                                                                                                   |
-| Where am I going?    | Observe future real Generation Workflow samples without treating one provider run as p95                             |
-| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                                        |
-| What have I learned? | See `findings.md`                                                                                                    |
-| What have I done?    | Optimized Generation Workflow orchestration, added high-level commands, verified PTY input and recorded a real smoke |
+| Question             | Answer                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Where am I?          | Phase 15 completed                                                                                             |
+| Where am I going?    | Observe real Library provenance navigation and add regressions only for evidence-backed relationship ambiguity |
+| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                                  |
+| What have I learned? | See `findings.md`                                                                                              |
+| What have I done?    | Linked Prompt Revision, Generation and Reference Image bidirectionally without changing Archive provenance     |

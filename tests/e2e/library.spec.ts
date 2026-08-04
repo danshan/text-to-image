@@ -43,10 +43,13 @@ test("traverses immutable provenance from an image to its creation", async ({ pa
   await expect(page.getByRole("heading", { level: 2, name: "Prompt Revision" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Outputs" })).toBeVisible();
 
-  await page.getByRole("link", { name: /Open creative thread/ }).click();
+  await page.getByRole("link", { name: /Open linked Prompt Revision/ }).click();
+  await expect(page).toHaveURL(/\/creations\/[^?]+\?revision=[^&]+&generation=/);
   await expect(page.getByRole("heading", { level: 1, name: "Minimal Fixture" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Prompt History" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Generation Timeline" })).toBeVisible();
+  await expect(page.locator(".revision-item.is-focused")).toHaveCount(1);
+  await expect(page.locator(".timeline > li.is-focused")).toHaveCount(1);
 });
 
 test("keeps gallery search in the URL and restores it through browser history", async ({
@@ -114,9 +117,7 @@ test("filters curated images and persists optimistic curation", async ({ page },
 test("compares prompt revisions and previews recovery without mutation", async ({ page }) => {
   await page.goto("/creations/f69e912d-c504-4278-89d5-4558ba452df0");
 
-  const revisionSelectors = page.getByRole("checkbox", {
-    name: "Select revision for comparison",
-  });
+  const revisionSelectors = page.getByRole("checkbox", { name: "Compare" });
   await expect(revisionSelectors).toHaveCount(2);
   await revisionSelectors.nth(0).check();
   await revisionSelectors.nth(1).check();

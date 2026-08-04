@@ -41,6 +41,16 @@ export function navigate(to: string, options: { replace?: boolean } = {}): void 
   window.dispatchEvent(new Event(navigationEvent));
 }
 
+export function creationProvenancePath(
+  creationId: string,
+  promptRevisionId: string,
+  generationId?: string,
+): string {
+  const search = new URLSearchParams({ revision: promptRevisionId });
+  if (generationId) search.set("generation", generationId);
+  return `/creations/${encodeURIComponent(creationId)}?${search.toString()}`;
+}
+
 export interface LinkProps {
   to: string;
   children: ReactNode;

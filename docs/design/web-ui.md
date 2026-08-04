@@ -2,7 +2,7 @@
 title: Web UI Design
 status: accepted
 owner: project
-last_updated: 2026-08-03
+last_updated: 2026-08-04
 related:
   - ../../CONTEXT.md
   - ../product/requirements.md
@@ -208,7 +208,15 @@ Query state 编码到 URL. Search input 使用 debounced request, Enter 立即�
 3. Prompt History: 单父节点 branch tree, 支持选择两个 Revision 查看 diff.
 4. Generation Timeline: 按时间展示 status、Reference Image、Output 与 Replay relation.
 
-默认显示 linearized timeline, branch indentation 表示 parent relation. 复杂可视化图不是 MVP. Restore old Revision 只更新 Draft 和 `basedOnRevisionId`, 不修改历史.
+Prompt History 与 Generation Timeline 是同一 provenance 的两个视图, 但不合并为一张 Generation 卡片. Focus 与 Compare 使用独立状态:
+
+- 点击 Prompt Revision 会 Focus 该 Revision, 保留完整 Timeline, 高亮全部关联 Generation, 并定位到最新关联项.
+- Focused Revision 按 Generation usage 分组展开实际 Reference Image、roles 与 guidance; 没有关联调用时显示尚未生成.
+- 点击 Timeline Generation 会 Focus 唯一 Prompt Revision 与该次调用; Timeline item 始终展示 Prompt Revision link 与 Reference Image thumbnails.
+- Focus 使用 `revision` 与可选 `generation` query parameters. 无参数时默认 Focus 最新 Generation 及其 Prompt Revision; 没有 Generation 时选择最新 Revision.
+- Detail 页面返回 Creation 时携带相同参数, 因而刷新、复制链接和 browser history 均恢复精确上下文.
+
+默认显示 linearized Prompt branch 与完整 chronological Timeline, branch indentation 表示 parent relation. 复杂可视化图不是 MVP. Restore old Revision 只更新 Draft 和 `basedOnRevisionId`, 不修改历史.
 
 页面可以准备 Reference Image selection 与 roles, 但只生成一份可复制的 Codex invocation instruction, 不从 browser 调用 Codex.
 
@@ -217,9 +225,11 @@ Query state 编码到 URL. Search input 使用 debounced request, Enter 立即�
 Detail 使用两栏布局:
 
 - Main: full preview, zoom, dimensions, media type 和 hash.
-- Inspector: producing Generation, used-as-reference relations, Creation links 和 Curation controls.
+- Inspector: producing Generation, used-as-reference relations, Generation 与 Prompt Revision links 和 Curation controls.
 
 同一 Image Asset 没有 producing Generation 时显示 `Imported`. 有 producing Generation 时最多一个直接 producing relation, 但可以被任意多个 Generation 引用.
+
+每条 used-as-reference relation 是一次 Generation usage, 同时展示 Generation、该调用的 Prompt Revision、roles 与 guidance. UI 不把多个 usage 合并为直接 Reference Image -> Prompt Revision 关系.
 
 图片 content endpoint 只接受 hash 与 predefined variant:
 
@@ -235,7 +245,7 @@ GET /api/v1/images/:sha256/content?variant=original
 必须展示:
 
 - terminal status、outcomeKnown 与时间.
-- Creation 与 Prompt Revision links.
+- Creation 与 Prompt Revision links; 两者返回同一个 URL-backed provenance Focus.
 - Change Instruction 与完整 actual prompt.
 - Parent Revision 与 Prompt diff action.
 - Reference Image thumbnails、roles 与 guidance.
@@ -319,6 +329,8 @@ POST /api/v1/library/transitions/:transitionId/commit
 Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴露 Archive generic file write、filesystem directory listing 或任意文件读取 endpoint.
 
 `GET /api/v1/generation-issues` 返回从权威 Generation、Creation Curation 与 read model 派生的 bounded list. 每项至少包含 Generation ID、Creation ID/title、status、outcomeKnown、time 和 typed error; endpoint 不创建新的 mutable Issue state.
+
+`GET /api/v1/images/:sha256` 的每条 used-as-reference relation 返回 `generationId`、`creationId`、`promptRevisionId`、`roles` 与 `guidance`; `promptRevisionId` 从 Generation read model 派生, 不写回 Archive.
 
 ## Local Service Security
 
@@ -412,9 +424,9 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
 
 ## Validation
 
-- Component tests 覆盖 card、filter、Prompt diff、Curation conflict 和 recovery action states.
+- Component tests 覆盖 card、filter、Prompt diff、独立 provenance Focus、URL round-trip、同 Revision 多 Generation 高亮、Reference usage、Curation conflict 和 recovery action states.
 - Accessibility automation 覆盖 route landmarks、labels、contrast、dialog 和 keyboard order.
-- End-to-end tests 覆盖 Gallery -> Image -> Generation -> Creation provenance navigation.
+- End-to-end tests 覆盖 Gallery -> Image -> Generation -> Creation provenance navigation, 以及 Generation/Image Detail 到精确 Prompt Revision 与 Generation Focus 的反向 links.
 - Desktop review 覆盖 `1024x768`, `1280x720`, `1366x768`, `1440x900` 和 `1920x1080`, 以及 Light、Dark、System theme. 重点检查首屏 header、controls、第一批内容、两栏 detail、loading、empty、failed、interrupted、degraded 和 conflict states.
 - Component 与 end-to-end tests 覆盖 Generation Issues latest-per-active-Creation derivation、Safety Rejection wording、Review Prompt navigation 和后续 succeeded Generation 消退.
 - Security tests 覆盖 Host、Origin、token、CORS、CSP、path traversal 和 arbitrary file access.

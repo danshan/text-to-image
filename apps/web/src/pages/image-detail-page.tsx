@@ -4,7 +4,7 @@ import { formatDate } from "../components/image-grid";
 import { RecordError, RecordLoading } from "../components/states";
 import { GenerationStatusBadge } from "../components/status";
 import { useApiResource } from "../hooks/use-api-resource";
-import { Link } from "../router";
+import { creationProvenancePath, Link } from "../router";
 
 export function ImageDetailPage({ api, sha256 }: { api: ApiClient; sha256: string }) {
   const resource = useApiResource(`image:${sha256}`, (signal) => api.image(sha256, signal));
@@ -88,10 +88,23 @@ export function ImageDetailPage({ api, sha256 }: { api: ApiClient; sha256: strin
               <ol className="relation-list">
                 {image.usedAsReference.map((relation) => (
                   <li key={`${relation.generationId}:${relation.creationId}`}>
-                    <Link to={`/generations/${relation.generationId}`}>
-                      <code>{relation.generationId.slice(0, 10)}</code>
-                      <span>{relation.roles.join(" · ")}</span>
-                    </Link>
+                    <div className="relation-links">
+                      <Link to={`/generations/${relation.generationId}`}>
+                        <code>{relation.generationId.slice(0, 10)}</code>
+                        <span>Generation</span>
+                      </Link>
+                      <Link
+                        to={creationProvenancePath(
+                          relation.creationId,
+                          relation.promptRevisionId,
+                          relation.generationId,
+                        )}
+                      >
+                        <code>{relation.promptRevisionId.slice(0, 10)}</code>
+                        <span>Prompt Revision</span>
+                      </Link>
+                    </div>
+                    <p>{relation.roles.join(" · ")}</p>
                     {relation.guidance && <p>{relation.guidance}</p>}
                   </li>
                 ))}

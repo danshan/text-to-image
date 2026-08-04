@@ -220,7 +220,10 @@ Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow
 - unavailable flow 导航到 Settings, 显示 resolved absolute path、Initialize、Select 与 Retry, 且不请求 Gallery.
 - Library transition 显示 monotonic stage/count progress, 成功后 reload, 失败保留 actionable target path.
 - filter URL round-trip 与 browser back/forward.
-- Gallery -> Image -> Generation -> Creation provenance navigation.
+- Gallery -> Image -> Generation -> Creation provenance navigation, 包括详情页返回精确 Revision/Generation Focus.
+- Prompt branch Focus 与 Compare 独立状态、URL round-trip、默认最新 Generation、同 Revision 多 Generation 高亮与 Reference usage 分组.
+- Generation Timeline 的 Prompt link、Reference thumbnails 与完整 Timeline 保留语义.
+- Image used-as-reference relation 同时返回真实 Generation 与 Prompt Revision, 不丢失 roles 或 guidance.
 - Prompt branch selection 与 diff labels.
 - Curation success/conflict/retry.
 - Recovery dry-run 与 state-specific actions.

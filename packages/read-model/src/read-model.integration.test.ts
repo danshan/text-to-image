@@ -86,7 +86,13 @@ async function fixture(): Promise<{ root: string; assetSha256: string }> {
     replayOfGenerationId: null,
     status: "succeeded",
     outcomeKnown: true,
-    references: [],
+    references: [
+      {
+        assetSha256,
+        roles: ["style"],
+        guidance: "Use the lighting only.",
+      },
+    ],
     outputs: [{ index: 0, assetSha256, mediaType: "image/png", width: 1536, height: 1024 }],
     tool: { name: "image_gen.imagegen", model: null, parameters: {} },
     startedAt: "2026-08-02T12:02:05.000Z",
@@ -198,6 +204,15 @@ describe("ReadModel", () => {
     });
     expect(model.getGeneration(generationId)?.outputs[0]?.assetSha256).toBe(assetSha256);
     expect(model.getRevisions(creationId)[0]?.prompt).toContain("quiet portrait");
+    expect(model.getReferenceRelations(assetSha256)).toEqual([
+      {
+        generationId,
+        creationId,
+        promptRevisionId: revisionId,
+        roles: ["style"],
+        guidance: "Use the lighting only.",
+      },
+    ]);
     expect(await model.status()).toMatchObject({
       available: true,
       lagCount: 0,

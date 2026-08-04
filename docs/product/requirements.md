@@ -175,6 +175,9 @@ related:
 - `FR-UI-011`: Gallery 图片网格只展示 Image Asset; Generation Issue 位于网格上方的独立区域, 不伪装成占位图片.
 - `FR-UI-012`: 每个 active Creation 最多展示一个 Generation Issue, 仅由最新 Generation 的终态决定; `shelved` Creation 不进入该区域.
 - `FR-UI-013`: Safety Rejection 只提供 category-level guidance 与 `Review Prompt` 路径, 不自动高亮触发词、不自动改写 Prompt、不提供一键重试.
+- `FR-UI-014`: Creation 页面在 Prompt History 与 Generation Timeline 之间提供 URL 可恢复的双向 Focus; Prompt Compare 保持独立状态.
+- `FR-UI-015`: Reference Image 只按 Generation usage 关联 Prompt Revision; Focused Revision 按 Generation 分组展示实际 Reference Image、roles 与 guidance.
+- `FR-UI-016`: Generation 与 Image Asset 详情提供返回精确 Creation、Prompt Revision 与 Generation 上下文的 links, 不新增独立 Prompt Revision 页面.
 
 ### Codex Controls
 
@@ -214,6 +217,8 @@ related:
 - Safety Rejection 能归档 input、output 与 unknown moderation stage 及零到多个 categories, 旧的无 `moderation` Generation record 仍通过 Schema 校验.
 - Gallery 对每个 active Creation 只展示最新 failed 或 interrupted Generation Issue; 后续 succeeded Generation 会移除该 Creation 的全局提示, 历史仍可从 Timeline 访问.
 - Generation Detail 对 output-stage rejection 使用非归罪文案和 category-level guidance, 不把建议描述为已确认的触发词.
+- Creation provenance Focus 在无 URL 参数时选择最新 Generation, 在 deep link、刷新、复制链接和 browser back/forward 后恢复对应 Prompt Revision 与 Generation; 同一 Revision 的全部 Generation 保持可见并被共同高亮.
+- Image Asset 的每条 used-as-reference relation 同时暴露 Generation 与该 usage 使用的 Prompt Revision, 不把多个 Generation 合并为虚假的直接 Reference Image -> Prompt Revision 关系.
 - Web UI 在 `1024x768`, `1280x720`, `1366x768`, `1440x900` 和 `1920x1080` 下完成 Light、Dark、System theme 与 keyboard/focus 验收; Sidebar 在所有主题下保持深色且文字、边框和 focus ring 可读.
 - 2,000 Creation、30,000 Generation、10,000 Image Asset 的合成数据上, reference macOS machine 的全量索引重建不超过 60 秒, warm query p95 不超过 200 ms, warm thumbnail 首屏可交互不超过 2 秒.
 - fake generator 在 release-scale Library 上验证 `preflight -> invocation-ready` p95 不超过 20 秒, `tool-returned -> committed and index-ready` p95 不超过 10 秒, 且非模型端到端开销不超过 30 秒.

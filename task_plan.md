@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 14
+Phase 15
 
 ## Phases
 
@@ -201,9 +201,37 @@ Phase 14
 7. 同一 `workflowRunId` 关联 Codex UI 权威端到端耗时与 repository spans. 未观测 UI duration 保持 `unknown`, 不从 repository timings 推测.
 8. deterministic fake workflow 至少运行 12 次; 完成后执行一次真实 Workspace Ready Generation observation, 不以单个真实样本宣称 provider p95.
 
+### Phase 15: Prompt, Generation, and Reference Provenance Navigation
+
+- [x] 通过 `$grill-with-docs` 确认 Prompt Revision、Generation 与 Reference Image 的双向交互语义.
+- [x] 将受影响的产品需求、Web UI、用户手册与测试策略切回 `draft`.
+- [x] 在 Creation 页面实现 Prompt History 与 Generation Timeline 的 URL-backed 双区同步联动.
+- [x] 按 Generation usage 展示 Reference Image, 并补全 Generation、Image 与 Prompt Revision 的精确反向链接.
+- [x] 保持 Focus 与 Prompt Compare 为独立状态, 补充 keyboard、deep-link 与多次 Generation 覆盖.
+- [x] 执行 focused 与 root verification, 更新研发记录并恢复正式文档为 `accepted`.
+- **Status:** completed
+- **Completed:** 2026-08-04
+
+#### Confirmed Contract
+
+1. Reference Image 属于 Generation usage, 不直接归属于 Prompt Revision.
+2. Prompt History 与 Generation Timeline 保持两个视图; Focus Revision 时保留完整 Timeline, 高亮全部关联 Generation, 并定位到最新关联项.
+3. Focused Revision 按 Generation 分组展开 Reference Image、roles 与 guidance; Timeline 显示 Prompt Revision link 与 Reference Image thumbnails.
+4. Creation deep link 使用 URL 保存 Focus Revision 与 Generation, 支持刷新、复制、前进后退和详情页精确返回.
+5. 无深链时默认 Focus 最新 Generation 及其 Prompt Revision; 没有 Generation 时 Focus 最新 Revision.
+6. Prompt Compare 与 provenance Focus 使用独立状态和控件.
+7. Image Detail 按 Generation usage 同时显示 Generation 与 Prompt Revision links; 不新增独立 Prompt Revision route.
+
+#### Verification Summary
+
+- root unit、Hook/Skill 与 Web tests 分别通过 `11`、`31` 与 `24` tests; read model integration 共 `46` tests 通过.
+- Chromium 与 WebKit provenance navigation、Prompt Compare 和 desktop visual snapshots 通过; WebKit 保留 1 个既有 mutation skip.
+- `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check` 与 `npm run docs:check` 通过.
+- 未修改 Archive Schema、Generation writer 或持久化格式; `promptRevisionId` 只从 rebuildable read model join 派生.
+
 ## Remaining Design Questions
 
-无. Phase 13 性能重设计的实现与验证已完成, 后续仅在实际 provider latency 或新的错误证据出现时增补指标与回归用例.
+无. Phase 15 provenance navigation 已完成, 后续只在真实 Library 出现新的关系歧义或 desktop visual regression 时增补.
 
 ## Errors Encountered
 
@@ -239,3 +267,6 @@ Phase 14
 | Documentation demo CLI could not create the `tsx` IPC socket in the sandbox    |       1 | Re-ran scoped temporary Library commands outside the sandbox     |
 | Development Server port `4174` was already occupied during screenshot setup    |       1 | Used an isolated production-like Server on loopback port `4180`  |
 | Full-page screenshots repeated the sticky shell near the bottom                |       1 | Cropped exact documentation assets and visually rechecked them   |
+| Direct read model workspace test excluded integration files                    |       1 | Used the root integration Vitest config with the exact test path |
+| Playwright browser launch was denied by the macOS sandbox                      |       1 | Re-ran the scoped browser suite outside the sandbox              |
+| E2E Prompt Compare assertion used the removed hidden label                     |       1 | Asserted the new visible `Compare` label and reran both browsers |

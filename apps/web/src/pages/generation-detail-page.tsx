@@ -4,7 +4,7 @@ import { formatDate } from "../components/image-grid";
 import { RecordError, RecordLoading } from "../components/states";
 import { GenerationStatusBadge } from "../components/status";
 import { useApiResource } from "../hooks/use-api-resource";
-import { Link } from "../router";
+import { creationProvenancePath, Link } from "../router";
 
 export function GenerationDetailPage({
   api,
@@ -42,7 +42,16 @@ export function GenerationDetailPage({
                 <span className="eyebrow">Actual tool input</span>
                 <h2>Prompt Revision</h2>
               </div>
-              <code>{generation.promptRevisionId.slice(0, 12)}</code>
+              <Link
+                className="relation-link"
+                to={creationProvenancePath(
+                  generation.creationId,
+                  generation.promptRevisionId,
+                  generation.id,
+                )}
+              >
+                <code>{generation.promptRevisionId.slice(0, 12)}</code>
+              </Link>
             </header>
             {generation.prompt ? (
               <>
@@ -120,9 +129,16 @@ export function GenerationDetailPage({
           <section>
             <span className="eyebrow">Relations</span>
             <h2>Creation</h2>
-            <Link className="relation-card" to={`/creations/${generation.creationId}`}>
+            <Link
+              className="relation-card"
+              to={creationProvenancePath(
+                generation.creationId,
+                generation.promptRevisionId,
+                generation.id,
+              )}
+            >
               <code>{generation.creationId}</code>
-              <span>Open creative thread</span>
+              <span>Open linked Prompt Revision</span>
             </Link>
           </section>
           <section>

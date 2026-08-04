@@ -122,6 +122,7 @@ export interface CreationSummary {
 export interface ReferenceRelation {
   generationId: string;
   creationId: string;
+  promptRevisionId: string;
   roles: Array<"subject" | "style" | "composition" | "palette" | "other">;
   guidance: string | null;
 }

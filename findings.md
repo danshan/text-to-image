@@ -89,6 +89,14 @@
 - 面向用户的 Prompt 迭代应围绕单变量 change instruction, immutable Revision, independent Generation, Restore to Draft 和 explicit replay 展开, 避免把随机 variant 与 Prompt 修改混为一谈.
 - 正式 Web UI 截图不应泄漏用户运行时 Library. 使用通过共享 writer 构建并完整校验的临时合成 Library, 可以同时保留真实界面和真实 provenance 关系.
 
+## Phase 15 Implementation Findings
+
+- Archive 与 Creation API 已包含 `Generation.promptRevisionId` 和每次调用的 `references`; Prompt History 与 Timeline 不可互查的根因是 UI 没有消费现有关系, 不是 provenance 缺失.
+- Reference Image 属于 Generation usage, 不能直接挂到 Prompt Revision. 同一 Revision 可以没有 Generation, 也可以被多次调用并使用不同 Reference Images.
+- Image Detail 的 existing used-as-reference relation 缺少 `promptRevisionId`; 该字段可以从 rebuildable Generation read model 派生, 无需修改 Archive Schema 或写入协议.
+- 现有 Creation route 已支持 query-aware browser location. 使用 `revision` 与 `generation` 参数即可实现 refresh、copy、back/forward 与详情页返回, 无需新增 Prompt Revision route 或 router dependency.
+- Prompt Compare 的双选状态与 provenance Focus 是不同用户意图. 共用 checkbox 会让多选后的 Timeline target 含糊, 因而必须保留独立控件与 accessible state.
+
 ## Research Findings
 
 - Codex 官方手册说明 `AGENTS.md` 是持久仓库指令, 仓库内较近层级覆盖较远层级.

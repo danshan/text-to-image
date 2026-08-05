@@ -154,7 +154,9 @@ describe("local service security", () => {
     expect(response.json()).toMatchObject({
       status: "degraded",
       index: { degraded: true, code: "INDEX_WRITER_BUSY", lagCount: 1 },
-      diagnostics: ["The Gallery index is waiting for another index writer. Retry after it finishes."],
+      diagnostics: [
+        "The Gallery index is waiting for another index writer. Retry after it finishes.",
+      ],
     });
     expect(response.body).not.toContain("Internal coordinator detail");
     expect(response.body).not.toContain(".cache");

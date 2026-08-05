@@ -432,12 +432,14 @@ Creation-owned path 从 candidate 排除, 但同一 Generation Marker 首次引�
 
 Draft 与 Curation 不使用 Archive lock, 采用 expected hash 或 `entityRevision` 的 optimistic concurrency.
 
+Read model 使用独立的 Index Writer coordinator, 不复用 Archive commit lock. 所有 process 的 incremental catch-up 与 full rebuild 通过 `.cache/index-writer.sqlite` transaction 串行化; 8 秒内未获锁返回 `INDEX_WRITER_BUSY`, 不抢锁、不并发 rebuild. 获锁后必须重新读取当前 `index.sqlite`、Marker cursor 与 Archive snapshot. Read model 使用 `DELETE` journal mode, 使 rebuild replacement 不依赖 WAL/SHM sidecar 的跨文件一致性.
+
 ## Failure Handling
 
 - Marker 存在但任一 listed record 缺失或 digest 不同: Archive corruption, 拒绝写入并报告 repair requirement.
 - Final path 存在但没有任何 Marker 覆盖: uncommitted object, 根据 staging transaction 恢复或 quarantine.
 - Staging 存在但 transaction metadata 缺失或损坏: quarantine, 不猜测意图.
-- Cache 损坏: 关闭连接, 删除 cache, 从 Commit Marker 全量重建.
+- Cache 缺失、Schema 不兼容或确认的 SQLite corruption: 取得 Index Writer coordinator 后从 Commit Marker 全量重建; lock contention 只报告 degraded, 不误判为 corruption.
 - Curation JSON 损坏: 保留原文件, 报告局部错误; 不影响 Archive 读取.
 - Library version 高于 reader: read-only diagnostic 后拒绝写入.
 - Library version 低于 writer: 要求显式 migration, 不自动执行.

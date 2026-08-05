@@ -228,6 +228,7 @@ related:
 - `NFR-014`: Server 启动命令必须支持可选 root `.env`; daemon lifecycle 正式支持 macOS 与 Linux, 每个 Git checkout 最多一个实例, Windows 不在支持范围.
 - `NFR-015`: Purge recursive cleanup 必须验证 exact sibling target、拒绝 symlink 与 mount escape, 遇到 locked file、permission 或 I/O failure 时停止, 不自动升级删除手段.
 - `NFR-016`: Purge 成功后的 active Library、retired path、journal、cache 与持久日志不得包含可识别目标的数据; server log 只记录 operation ID、target kind、phase、count 与 stable error code.
+- `NFR-017`: 所有 process 的 incremental catch-up 与 full rebuild 必须共享 OS-managed Index Writer coordinator. Contender 最多等待 8 秒, 获锁后重新读取 Marker/cursor; timeout 只降级 read model, 不并发 rebuild 或改变 committed Generation.
 
 ## Acceptance Criteria
 

@@ -202,6 +202,10 @@ Purge concurrency 使用 Server request drain 与多个独立 child process 验�
 - capture 返回 staged Output path, fake Skill 不再通过 recovery request 或 staging scan 定位图片.
 - 高层 happy-path command 复用低层状态机, 在每个内部 transition 中断后仍能通过现有 recovery command 处理.
 - 增量 Marker catch-up 原子更新 `last_indexed_marker`; projection failure 保留 committed Generation 并返回 index degraded.
+- 使用 deterministic barrier 启动至少 4 个真实 Node.js child process, 混合竞争 incremental catch-up 与 full rebuild, 断言同一时间只有一个 Index Writer 且最终 Marker lag 为零.
+- Index Writer owner 被终止后, 下一 process 依靠 OS release 获取 coordinator, 不删除 stale lock file; production 8 秒 timeout 使用缩短的 test-only option 验证 `INDEX_WRITER_BUSY`.
+- 并发打开 confirmed-corrupt index 时只有首个 lock holder 实际 rebuild, 其余 process 获锁后复用 replacement; legacy WAL index 自动 replacement 为 `DELETE` journal mode.
+- Archive record digest mismatch 返回 `INDEX_PROJECTION_FAILED` 并 fail closed, 不被 automatic SQLite rebuild 掩盖.
 - progress 只包含真实阶段与累计耗时, provider 没有事件时不生成百分比或 ETA.
 - telemetry payload 不包含 Prompt、Reference guidance、文件路径、provider transcript 或 opaque handle, telemetry failure 不影响 commit.
 

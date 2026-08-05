@@ -95,7 +95,7 @@ Browser -> <configured-ip>:<port> -> Fastify -> Shared Packages -> Library
 3. 缺少 root 或 manifest 时跳过 read model, 进入 Library Unavailable control mode.
 4. manifest 存在时验证 format 与 permissions.
 5. 获取 read-only health snapshot.
-6. 打开 SQLite read model; cache 缺失、损坏或 Commit Marker lag 时先重建.
+6. 打开 SQLite read model; Commit Marker lag 时执行增量 catch-up, 只有 cache 缺失、Schema 不兼容或确认的 SQLite corruption 才 full rebuild.
 7. 生成 session token 并绑定 configured host.
 8. 对 wildcard bind 枚举 usable active interfaces, 建立 IP literal allowlist 并输出 concrete URLs. Scoped IPv6 link-local address 不发布为缺少 zone 的 URL.
 
@@ -203,7 +203,11 @@ SQLite -> reconstruct Archive
 
 普通查询优先使用 SQLite read model. 权威 detail response 必须包含或核对 Archive source version. Diagnostics、validation 与 rebuild 直接遍历 Commit Marker 和 records.
 
-Read model lag 允许在运行时发生, 但必须可观察. API health 返回 last indexed Marker、latest Archive Marker 和 lag count. Server 启动和 candidate preparation 都会重建 missing、corrupt 或 lagging read model. Web transition 可以热切换 root; CLI 修改 Library selection 或完成 Library Merge 后, 当前 process 仍需通过 Settings Retry/select 或重新启动以读取新 snapshot.
+Read model lag 允许在运行时发生, 但必须可观察. API health 返回 last indexed Marker、latest Archive Marker、lag count、degraded state 与 stable reason code. Server 启动和 candidate preparation 对 lagging index 执行增量 catch-up, 对 missing、Schema-incompatible 或 confirmed-corrupt index 执行 full rebuild. Web transition 可以热切换 root; CLI 修改 Library selection 或完成 Library Merge 后, 当前 process 仍需通过 Settings Retry/select 或重新启动以读取新 snapshot.
+
+所有 process 的 incremental catch-up 与 full rebuild 共用 `.cache/index-writer.sqlite` 的 SQLite write transaction. 该 coordinator 不随 `index.sqlite` replacement 移动, owner process 退出时由 OS 自动释放 lock. Contender 使用短 SQLite timeout 与 async backoff, 总等待上限为 8 秒; 获锁后重新打开 index 并重新扫描 Archive Marker 与 cursor. 超时返回 `INDEX_WRITER_BUSY`, 不触发第二个 rebuild, 也不改变已经 committed 的 Generation.
+
+可替换 read model 使用 `DELETE` journal mode, 避免 atomic rename 后新主文件与旧 WAL/SHM generation 不匹配. Rebuild 先在临时单文件数据库完成、关闭并 flush, 再替换 `index.sqlite`; 其他 process 的既有 reader 可以继续读取旧 inode, 新 reader 打开 replacement. `.cache/index-degradation.json` 只保存可丢弃的 stable code、bounded message 与时间, successful catch-up/rebuild 后清除; 它不属于 Archive 或 Workflow Telemetry.
 
 ## Source Control and Runtime Data
 

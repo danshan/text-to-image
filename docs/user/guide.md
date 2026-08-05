@@ -382,6 +382,10 @@ Creation Purge 完成并同步 index 后, 该 Creation 与全部 Generation 已�
 
 为了保持完整历史, 每个真实输出都会先归档. 主观质量通常由 Gallery 收藏、标签和备注处理. 如果确实需要永久删除, 使用 Detail 页面的 Purge Plan; 不要直接修改 Library 文件.
 
+### 为什么 Generation 已完成, Gallery 却显示 Index degraded?
+
+Generation 已经提交到 Archive, 但 SQLite Gallery index 尚未追平. `INDEX_WRITER_BUSY` 表示另一个生成任务正在更新或重建同一个 index; 等它完成后在 Settings 选择 `Rebuild index` 或再次 Retry. 不要重新调用图片工具, 也不要手工删除 Archive 文件. `INDEX_COORDINATOR_FAILED` 表示需要先停止仍在使用该 Library 的本地 process, 再按开发指南恢复可重建 cache.
+
 ### 修改 Draft 会不会改变旧图片?
 
 不会. 旧图片绑定的是不可变 Prompt Revision. Draft 只是当前工作稿.

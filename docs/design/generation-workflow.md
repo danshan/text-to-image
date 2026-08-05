@@ -271,9 +271,9 @@ writer 按 Asset Library 逻辑提交协议发布 Commit Marker. Skill 不直接
 
 Commit 后, 如果当前 Draft hash 仍等于 prepare 时的 `draftContentSha256`, writer 保留 Draft 的原始正文和语言, 仅把 `basedOnRevisionId` 更新为新 Revision. Generation 成功、失败或中断都不得把 effective Prompt 写回 Draft. 如果用户在生成期间修改 Draft, 不覆盖用户内容, 也不更新其 based-on metadata, 只报告 concurrent edit.
 
-正常路径只增量投影尚未处理的 Commit Marker. 每个 Marker 在单个 SQLite transaction 中应用, 成功后原子更新 `last_indexed_marker`. 全量 rebuild 只用于 cache 缺失、Schema 变化、corruption 或显式 recovery.
+正常路径只增量投影尚未处理的 Commit Marker. 每个 Marker 在单个 SQLite transaction 中应用, 成功后原子更新 `last_indexed_marker`. 全量 rebuild 只用于 cache 缺失、Schema 变化、confirmed SQLite corruption 或显式 recovery. Catch-up 与 rebuild 先竞争同一个跨进程 Index Writer coordinator, 最多等待 8 秒; 获锁后重新读取 Marker 与 cursor, 禁止使用等待前 snapshot 或因 contention 启动第二个 rebuild.
 
-索引失败记录 warning, 不回滚已 committed Generation. 高层 command 返回 `index: degraded`, 后续运行从最后一个已应用 Marker 继续 catch up; 不重新调用图片工具.
+索引失败记录 warning, 不回滚已 committed Generation. 高层 command 返回 `index: degraded`、stable `code` 与实际 `lagCount`; `INDEX_WRITER_BUSY`、`INDEX_COORDINATOR_FAILED`、`INDEX_PROJECTION_FAILED` 和 `INDEX_REBUILD_FAILED` 不属于 Generation failure. 后续运行从最后一个已应用 Marker 继续 catch up; 不重新调用图片工具.
 
 ### 10. Report
 

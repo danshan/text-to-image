@@ -381,7 +381,7 @@ Library transition prepare 可以在旧 Library 继续服务时运行. UI 轮询
 
 ### Index corruption
 
-停止 server, 删除 `.cache/`, 运行 index rebuild. 不修改 Archive.
+正常的 missing、Schema mismatch 或 confirmed SQLite corruption 会在跨进程 Index Writer coordinator 内自动 rebuild. 如果 Settings 显示 `INDEX_WRITER_BUSY`, 等待当前 writer 完成后 Retry, 不删除 lock file 或启动并发 rebuild. 如果显示 `INDEX_COORDINATOR_FAILED`, 先停止所有使用该 Library 的 Server 与 CLI process, 再删除 `.cache/` 并运行 index rebuild. 任何操作都不修改 Archive.
 
 ### Purge remains in maintenance
 

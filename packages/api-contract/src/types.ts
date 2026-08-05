@@ -72,6 +72,13 @@ export interface HealthResponse {
     latestArchiveMarker: string | null;
     lastIndexedMarker: string | null;
     lagCount: number;
+    degraded: boolean;
+    code:
+      | "INDEX_WRITER_BUSY"
+      | "INDEX_COORDINATOR_FAILED"
+      | "INDEX_PROJECTION_FAILED"
+      | "INDEX_REBUILD_FAILED"
+      | null;
   };
   recoveryCount: number;
   diagnostics: string[];
@@ -209,6 +216,55 @@ export interface CreationDetail extends CreationSummary {
 export interface ImageDetail extends ImageSummary {
   producingGeneration: GenerationView | null;
   usedAsReference: ReferenceRelation[];
+}
+
+export type PurgeTarget =
+  { kind: "creation"; creationId: string } | { kind: "image"; assetSha256: string };
+
+export interface PurgePlan {
+  schemaVersion: 1;
+  target: PurgeTarget;
+  libraryId: string;
+  snapshotDigest: string;
+  planDigest: string;
+  confirmationPhrase: string;
+  executable: boolean;
+  deletePaths: string[];
+  retainedAssetSha256: string[];
+  blockingRelations: Array<{
+    creationId: string;
+    generationId: string;
+    relationType: "output" | "reference";
+  }>;
+  recoveryEvidence: Array<{
+    transactionId: string;
+    location: "staging" | "quarantine";
+    state: string;
+    byteCount: number;
+  }>;
+  abandonedRecoveryTransactionIds: string[];
+  warnings: string[];
+  deleteByteCount: number;
+  fallbackCopyByteCount: number;
+}
+
+export interface PurgePrepareRequest {
+  abandonRecoveryTransactionIds?: string[];
+}
+
+export interface PurgeExecuteRequest extends PurgePrepareRequest {
+  planDigest: string;
+  confirmation: string;
+}
+
+export interface PurgeExecuteResponse {
+  data: {
+    operationId: string;
+    target: PurgeTarget;
+    deletedPathCount: number;
+    deletedByteCount: number;
+    retainedAssetCount: number;
+  };
 }
 
 export interface RecoveryItem {

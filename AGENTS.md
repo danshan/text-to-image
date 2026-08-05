@@ -20,14 +20,15 @@
 - `CONTEXT.md`: 纯领域 glossary, 不写实现细节.
 - `docs/README.md`: 正式文档清单、状态和所有权.
 - `docs/standards/documentation.md`: 文档分类、格式、生命周期和完成标准.
-- `docs/user/guide.md`: 面向普通用户的图片生成、参考图、Prompt 迭代、整理与恢复手册. 当前为 `accepted`.
-- `docs/product/requirements.md`: 产品目标、用例、范围和验收标准. 当前为 `accepted`.
-- `docs/design/system-architecture.md`: 运行时组件、所有权、依赖、数据流和安全边界. 当前为 `accepted`.
-- `docs/design/asset-library.md`: 文件夹 Schema、身份、引用和演进规则. 当前为 `accepted`.
-- `docs/design/generation-workflow.md`: Codex Skill、事务、失败与恢复流程. 当前为 `accepted`.
-- `docs/design/web-ui.md`: 信息架构、查询与 Curation 交互. 当前为 `accepted`.
-- `docs/development/guide.md`: 本地开发、构建与运行方式. 当前为 `accepted`.
-- `docs/development/testing.md`: 测试分层、用例和验证命令. 当前为 `accepted`.
+- `docs/user/guide.md`: 面向普通用户的图片生成、参考图、Prompt 迭代、整理与恢复手册. 当前为 `draft`.
+- `docs/product/requirements.md`: 产品目标、用例、范围和验收标准. 当前为 `draft`.
+- `docs/design/system-architecture.md`: 运行时组件、所有权、依赖、数据流和安全边界. 当前为 `draft`.
+- `docs/design/asset-library.md`: 文件夹 Schema、身份、引用和演进规则. 当前为 `draft`.
+- `docs/design/generation-workflow.md`: Codex Skill、事务、失败与恢复流程. 当前为 `draft`.
+- `docs/design/purge-workflow.md`: Creation 与 Image Asset 的不可逆 Purge、maintenance、verified replacement 与恢复协议. 当前为 `draft`.
+- `docs/design/web-ui.md`: 信息架构、查询与 Curation 交互. 当前为 `draft`.
+- `docs/development/guide.md`: 本地开发、构建与运行方式. 当前为 `draft`.
+- `docs/development/testing.md`: 测试分层、用例和验证命令. 当前为 `draft`.
 - `docs/adr/`: 难以逆转且存在真实权衡的架构决定.
 - `schemas/asset-library/v1/`: 已跟踪的 Library format contract.
 - `fixtures/asset-libraries/`: clone 后可验证的合法与非法 Library 示例.

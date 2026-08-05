@@ -1,14 +1,15 @@
 ---
 title: Generation Workflow Design
-status: accepted
+status: draft
 owner: project
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 related:
   - ../../CONTEXT.md
   - asset-library.md
   - ../adr/0002-enforce-the-archive-with-repository-owned-controls.md
   - ../adr/0006-commit-generations-atomically.md
   - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
+  - purge-workflow.md
 ---
 
 # Generation Workflow 设计
@@ -344,6 +345,8 @@ npm run assetctl -- recover quarantine --library <library-root> --transaction <t
 ```
 
 所有 destructive recovery 都先显示 exact target 和 dry-run result. Cancel 仅适用于没有 invocation evidence 的 `prepared` transaction. quarantine 是可恢复 move, 不是 delete.
+
+Purge 默认不删除 staging 或 quarantine evidence. 如果相关 evidence 阻塞 Creation Purge 或 Image Asset Purge, 用户可以在 Purge Plan 中逐个选择 exact transaction ID 并二次确认 Recovery Evidence Abandonment. 存活 owner 或仍在执行的图片工具调用始终阻塞; malformed quarantine 不根据 age 或内容猜测归属. 详细协议见 [Purge Workflow](./purge-workflow.md).
 
 ## Project-level Hook
 

@@ -78,6 +78,18 @@ export function SettingsPage({ api, bootstrap }: { api: ApiClient; bootstrap: We
               <dt>Lag</dt>
               <dd>{health.data.index.lagCount}</dd>
             </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{health.data.index.degraded ? "Degraded" : "Ready"}</dd>
+            </div>
+            {health.data.index.code && (
+              <div>
+                <dt>Reason</dt>
+                <dd>
+                  <code>{health.data.index.code}</code>
+                </dd>
+              </div>
+            )}
           </dl>
           <p>Rebuilding deletes no Archive or Curation data.</p>
           {bootstrap.library.status === "ready" && (

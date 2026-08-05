@@ -1,17 +1,19 @@
 ---
 title: Web UI Design
-status: accepted
+status: draft
 owner: project
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 related:
   - ../../CONTEXT.md
   - ../product/requirements.md
   - asset-library.md
+  - purge-workflow.md
   - ../adr/0005-use-a-rebuildable-sqlite-read-model.md
   - ../adr/0007-separate-curation-from-provenance.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
+  - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
 ---
 
 # Web UI 设计
@@ -37,16 +39,17 @@ Web UI 是单用户、本地、client-rendered 的 Asset Library read-and-curate
 
 ### Routes
 
-| Route                        | Purpose                                                 |
-| ---------------------------- | ------------------------------------------------------- |
-| `/gallery`                   | 默认图片网格、search、filter 与 sort                    |
-| `/references`                | 外部导入与曾作为 Reference Image 的资产                 |
-| `/creations`                 | Creation 列表与 `active \| shelved` 过滤                |
-| `/creations/:creationId`     | Prompt branch、Generation timeline 与 Creation Curation |
-| `/images/:sha256`            | Image Asset provenance、引用与 Image Curation           |
-| `/generations/:generationId` | 一次工具调用的完整输入、输出和状态                      |
-| `/recovery`                  | staging、quarantine、lock 与恢复操作                    |
-| `/settings`                  | Library path、hot switch、format、index 与 diagnostics  |
+| Route                             | Purpose                                                 |
+| --------------------------------- | ------------------------------------------------------- |
+| `/gallery`                        | 默认图片网格、search、filter 与 sort                    |
+| `/references`                     | 外部导入与曾作为 Reference Image 的资产                 |
+| `/creations`                      | Creation 列表与 `active \| shelved` 过滤                |
+| `/creations/:creationId`          | Prompt branch、Generation timeline 与 Creation Curation |
+| `/images/:sha256`                 | Image Asset provenance、引用与 Image Curation           |
+| `/generations/:generationId`      | 一次工具调用的完整输入、输出和状态                      |
+| `/recovery`                       | staging、quarantine、lock 与恢复操作                    |
+| `/maintenance/purge/:operationId` | 独占 Purge progress、failure 与 restart recovery        |
+| `/settings`                       | Library path、hot switch、format、index 与 diagnostics  |
 
 根路径重定向到 `/gallery`. 非法 ID 返回 typed not-found state, 不回退到空页面.
 
@@ -220,6 +223,8 @@ Prompt History 与 Generation Timeline 是同一 provenance 的两个视图, 但
 
 页面可以准备 Reference Image selection 与 roles, 但只生成一份可复制的 Codex invocation instruction, 不从 browser 调用 Codex.
 
+页面底部提供 `Danger Zone`. Creation Purge 是这里唯一的删除入口, 不出现在 Creation list 或其他快捷菜单. 点击后先请求只读 Purge Plan, 展示将删除的 Draft、Revision、Generation、Curation、Generation Issue、Reference relation 与 recovery evidence, 同时明确列出所有保留的 Image Asset. Execute 前必须输入 `PURGE CREATION <creationId>`.
+
 ## Image Asset Detail
 
 Detail 使用两栏布局:
@@ -239,6 +244,8 @@ GET /api/v1/images/:sha256/content?variant=original
 ```
 
 服务端从 index/Archive 解析 canonical path, 不接受 query filesystem path.
+
+Detail 底部提供 Image Asset `Danger Zone`, 这是 Image Asset Purge 的唯一 Web 入口. Prepare 展示全部 blocking Output / Reference relation、Image Curation、thumbnail、payload bytes、Inbox exact-content warning 与 recovery evidence. 任一存续关系存在时禁用 Execute 并提供对应 Creation 与 Generation links; 不提供 cascade override. Execute 前必须输入 `PURGE IMAGE <assetSha256>`.
 
 ## Generation Detail
 
@@ -277,6 +284,23 @@ Recovery 是显式运维 surface, 不隐藏在 Settings 内. 每个 transaction 
 - malformed: quarantine.
 
 所有 action 先展示 dry-run. destructive label 只用于无法自动恢复的数据动作; quarantine 是可恢复 move. UI 不提供 delete staging 或 break lock 的通用按钮.
+
+Recovery Evidence Abandonment 不作为 Recovery 页面的通用 delete action. 它只能从目标 Detail 的 Purge Plan 中逐个选择 exact transaction, 显示 irreversible consequence 并二次确认. 存活 owner 或仍在执行的图片工具调用不显示可绕过选项.
+
+## Purge Maintenance Page
+
+Purge execute 后导航到 `/maintenance/purge/:operationId`. 页面不可手动关闭或导航到其他 Library data route, 只展示真实 phase 与累计时间:
+
+```text
+Preparing candidate
+Validating replacement
+Cutover started
+Removing retired data
+Rebuilding index
+Validation complete
+```
+
+没有可观测总量时不显示百分比或 ETA. Cutover 前失败返回原 Detail 并保留 plan error; Cutover 后失败保持 maintenance 页面, 显示 stable error、exact blocked path 和 restart recovery 指引, 不提供 rollback. Creation Purge 完成后导航到 `/creations`, Image Asset Purge 完成后导航到 `/gallery`.
 
 ## Curation Mutations
 
@@ -324,6 +348,11 @@ POST /api/v1/recovery/:transactionId/:action
 POST /api/v1/index/rebuild
 POST /api/v1/library/transitions
 POST /api/v1/library/transitions/:transitionId/commit
+POST /api/v1/purge/creations/:creationId/prepare
+POST /api/v1/purge/creations/:creationId/execute
+POST /api/v1/purge/images/:sha256/prepare
+POST /api/v1/purge/images/:sha256/execute
+GET /api/v1/purge/operations/:operationId
 ```
 
 Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴露 Archive generic file write、filesystem directory listing 或任意文件读取 endpoint.
@@ -331,6 +360,8 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 `GET /api/v1/generation-issues` 返回从权威 Generation、Creation Curation 与 read model 派生的 bounded list. 每项至少包含 Generation ID、Creation ID/title、status、outcomeKnown、time 和 typed error; endpoint 不创建新的 mutable Issue state.
 
 `GET /api/v1/images/:sha256` 的每条 used-as-reference relation 返回 `generationId`、`creationId`、`promptRevisionId`、`roles` 与 `guidance`; `promptRevisionId` 从 Generation read model 派生, 不写回 Archive.
+
+Purge prepare response 是 snapshot-bound plan, execute request 必须原样提交 `planDigest`、exact confirmation 与 abandonment transaction IDs. Server 在 execute 时重算权威 plan; 不匹配返回 `409 PURGE_PLAN_STALE`. Maintenance 期间除 bootstrap、health、Purge operation status 与必要 diagnostics 外, Library API 返回 `503 LIBRARY_MAINTENANCE`.
 
 ## Local Service Security
 
@@ -353,6 +384,7 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 - Archive corruption 使 service 进入 read-only degraded mode, 阻断 mutation 并提供 validator report.
 - API error 使用 stable code、human message、recovery hint 与 correlation ID.
 - Library transition 显示单个 monotonic stage/count progress; ready 后执行短 commit, 成功后 reload 获取新 bootstrap.
+- Purge execute 后锁定到 maintenance progress; reload 和 daemon restart 通过 operation ID 恢复同一 roll-forward 状态.
 - browser reload 和 back navigation 恢复 search、filter、scroll anchor 和 focused card where possible.
 
 ## Accessibility
@@ -385,6 +417,9 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 - Library Unavailable: 只保留 static Web、bootstrap、health、initialize、select 和 Retry control plane; Index rebuild 禁用.
 - Library path 外部恢复: 用户显式 Retry 后执行 full validation、Index prepare 和 atomic switch, 不自动打开.
 - Unsupported format: 显示 required app/Library version, 不提供 force-open.
+- Purge reference blocked: 显示全部 Output / Reference relation 和可导航的 Creation / Generation context, 不提供 cascade.
+- Purge plan stale: 不保留旧确认, 重新 prepare 并要求用户再次检查 impact.
+- Purge cleanup failure: 保持 maintenance, 显示 exact path 与 retry diagnostics, 不提供 rollback 或 force delete.
 
 ## Compatibility
 
@@ -402,6 +437,7 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
     "curation": true,
     "recovery": true,
     "libraryManagement": true,
+    "purge": true,
     "generationFromWeb": false
   }
 }
@@ -420,6 +456,8 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
 
 此状态下 `curation` 与 `recovery` capability 均为 `false`, `libraryManagement` 保持 `true`. UI 只渲染 Settings control plane. Transition commit 成功后 Server 轮换 session token, initiator reload, 其他 tab 的 stale token 被拒绝.
 
+Library Maintenance 时 bootstrap 返回 `status: "maintenance"`、operation ID、phase 与 allowed control-plane actions. `curation`, `recovery`, `libraryManagement` 和 Generation data capability 均为 `false`; `purgeStatus` 保持 `true`.
+
 前端遇到不支持的 major API version 时显示 upgrade error, 不尝试猜测 response shape.
 
 ## Validation
@@ -431,5 +469,6 @@ Web UI build 与 server API 版本必须匹配. Server bootstrap 返回:
 - Component 与 end-to-end tests 覆盖 Generation Issues latest-per-active-Creation derivation、Safety Rejection wording、Review Prompt navigation 和后续 succeeded Generation 消退.
 - Security tests 覆盖 Host、Origin、token、CORS、CSP、path traversal 和 arbitrary file access.
 - Component 与 integration tests 覆盖 absolute Library path、single transition、progress、Library Unavailable navigation、atomic switch 和 stale token rejection.
+- Component、API integration 与 E2E 覆盖两个 Detail Danger Zone、Purge Plan impact、reference blocker、typed confirmation、stale plan、abandonment、maintenance progress、完成导航和旧 deep link `404`.
 - Performance tests 使用 accepted synthetic dataset 与 warm/cold cache cases.
 - Visual regression 覆盖 light、dark、loading、empty、error 和 degraded states.

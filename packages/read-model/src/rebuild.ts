@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import {
+  IndexCoordinationError,
+  withIndexWriter,
+  type IndexWriterOptions,
+} from "./index-writer-coordinator.js";
+import { clearIndexDegradation, recordIndexDegradation } from "./index-degradation.js";
 import { createSchema, READ_MODEL_VERSION } from "./schema.js";
 import type { IndexCatchUpResult, IndexProgress } from "./types.js";
 
@@ -381,7 +387,7 @@ async function flushFile(path: string): Promise<void> {
   }
 }
 
-export async function rebuildReadModel(
+async function rebuildReadModelUnlocked(
   libraryRoot: string,
   onProgress?: (progress: IndexProgress) => void,
 ): Promise<string> {
@@ -414,15 +420,45 @@ export async function rebuildReadModel(
     database
       .prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('rebuilt_at', ?)")
       .run(new Date().toISOString());
-    database.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   } finally {
     database.close();
   }
   await flushFile(temporaryPath);
   await rename(temporaryPath, finalPath);
-  await rm(`${temporaryPath}-wal`, { force: true });
-  await rm(`${temporaryPath}-shm`, { force: true });
+  await rm(`${finalPath}-wal`, { force: true });
+  await rm(`${finalPath}-shm`, { force: true });
+  await rm(`${temporaryPath}-journal`, { force: true });
   return finalPath;
+}
+
+export async function rebuildReadModel(
+  libraryRoot: string,
+  onProgress?: (progress: IndexProgress) => void,
+  writerOptions: IndexWriterOptions & { skipIfCurrentUsable?: () => boolean } = {},
+): Promise<string> {
+  const root = resolve(libraryRoot);
+  await assertLibraryManifestPresent(root);
+  try {
+    const path = await withIndexWriter(
+      root,
+      () =>
+        writerOptions.skipIfCurrentUsable?.()
+          ? Promise.resolve(join(root, ".cache", "index.sqlite"))
+          : rebuildReadModelUnlocked(root, onProgress),
+      writerOptions,
+    );
+    await clearIndexDegradation(root);
+    return path;
+  } catch (error) {
+    const code =
+      error instanceof IndexCoordinationError ? error.code : ("INDEX_REBUILD_FAILED" as const);
+    await recordIndexDegradation(
+      root,
+      code,
+      error instanceof Error ? error.message : String(error),
+    ).catch(() => undefined);
+    throw error;
+  }
 }
 
 /**
@@ -430,7 +466,7 @@ export async function rebuildReadModel(
  * Each marker and cursor update share one SQLite transaction, so a failed
  * projection leaves the previous cursor valid for a later retry.
  */
-export async function catchUpReadModel(
+async function catchUpReadModelUnlocked(
   libraryRoot: string,
   onProgress?: (progress: IndexProgress) => void,
   options: { onMarker?: (marker: CommitMarker) => void } = {},
@@ -438,7 +474,7 @@ export async function catchUpReadModel(
   const root = resolve(libraryRoot);
   await assertLibraryManifestPresent(root);
   const databasePath = join(root, ".cache", "index.sqlite");
-  const database = new DatabaseSync(databasePath);
+  const database = new DatabaseSync(databasePath, { timeout: 1_000 });
   const markerEntries = await listCommitMarkers(root);
   let lastIndexedMarker: string | null = null;
   let processed = 0;
@@ -450,8 +486,10 @@ export async function catchUpReadModel(
         status: "degraded",
         processed: 0,
         total: markerEntries.length,
+        lagCount: markerEntries.length,
         lastIndexedMarker: null,
         failedMarker: null,
+        code: "INDEX_REBUILD_FAILED",
         error: "Read model schema version is unsupported.",
       };
     }
@@ -481,8 +519,10 @@ export async function catchUpReadModel(
         status: "degraded",
         processed: 0,
         total: markerEntries.length,
+        lagCount: markerEntries.length,
         lastIndexedMarker,
         failedMarker: null,
+        code: "INDEX_PROJECTION_FAILED",
         error: "Indexed Commit Marker is not present in the Archive.",
       };
     }
@@ -509,8 +549,10 @@ export async function catchUpReadModel(
           status: "degraded",
           processed,
           total: markerEntries.length,
+          lagCount: markerEntries.filter(({ marker }) => !indexedMarkerIds.has(marker.id)).length,
           lastIndexedMarker,
           failedMarker: marker.id,
+          code: "INDEX_PROJECTION_FAILED",
           error: error instanceof Error ? error.message : String(error),
         };
       }
@@ -523,8 +565,10 @@ export async function catchUpReadModel(
         status: "degraded",
         processed,
         total: markerEntries.length,
+        lagCount: markerEntries.filter(({ marker }) => !indexedMarkerIds.has(marker.id)).length,
         lastIndexedMarker,
         failedMarker: null,
+        code: "INDEX_PROJECTION_FAILED",
         error: error instanceof Error ? error.message : String(error),
       };
     }
@@ -532,11 +576,86 @@ export async function catchUpReadModel(
       status: "ready",
       processed,
       total: markerEntries.length,
+      lagCount: 0,
       lastIndexedMarker,
       failedMarker: null,
     };
   } finally {
     database.close();
+  }
+}
+
+async function coordinationFailureResult(
+  root: string,
+  error: IndexCoordinationError,
+): Promise<IndexCatchUpResult> {
+  const markerEntries = await listCommitMarkers(root);
+  let lastIndexedMarker: string | null = null;
+  let indexedMarkerIds: string[] = [];
+  let database: DatabaseSync | null = null;
+  try {
+    database = new DatabaseSync(join(root, ".cache", "index.sqlite"), { readOnly: true });
+    const cursor = database
+      .prepare("SELECT value FROM meta WHERE key = 'last_indexed_marker'")
+      .get() as { value?: unknown } | undefined;
+    if (typeof cursor?.value === "string") lastIndexedMarker = cursor.value;
+    const ids = database
+      .prepare("SELECT value FROM meta WHERE key = 'indexed_marker_ids'")
+      .get() as { value?: unknown } | undefined;
+    if (typeof ids?.value === "string") {
+      const parsed: unknown = JSON.parse(ids.value);
+      if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+        indexedMarkerIds = parsed;
+      }
+    }
+  } catch {
+    lastIndexedMarker = null;
+    indexedMarkerIds = [];
+  } finally {
+    database?.close();
+  }
+  return {
+    status: "degraded",
+    processed: 0,
+    total: markerEntries.length,
+    lagCount: await markerLagCount(root, lastIndexedMarker, indexedMarkerIds),
+    lastIndexedMarker,
+    failedMarker: null,
+    code: error.code,
+    error: error.message,
+  };
+}
+
+export async function catchUpReadModel(
+  libraryRoot: string,
+  onProgress?: (progress: IndexProgress) => void,
+  options: { onMarker?: (marker: CommitMarker) => void; writer?: IndexWriterOptions } = {},
+): Promise<IndexCatchUpResult> {
+  const root = resolve(libraryRoot);
+  await assertLibraryManifestPresent(root);
+  try {
+    const result = await withIndexWriter(
+      root,
+      () => catchUpReadModelUnlocked(root, onProgress, options),
+      options.writer,
+    );
+    if (result.status === "ready") {
+      await clearIndexDegradation(root);
+    } else {
+      await recordIndexDegradation(
+        root,
+        result.code ?? "INDEX_PROJECTION_FAILED",
+        result.error ?? "Index projection failed.",
+      ).catch(() => undefined);
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof IndexCoordinationError) {
+      const result = await coordinationFailureResult(root, error);
+      await recordIndexDegradation(root, error.code, error.message).catch(() => undefined);
+      return result;
+    }
+    throw error;
   }
 }
 

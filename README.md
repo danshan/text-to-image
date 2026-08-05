@@ -4,6 +4,8 @@
 
 MVP 已完成. 它提供 versioned Asset Library Schema、`assetctl`、原子 Generation 归档、Session Image 自动导入、恢复流程、可重建 SQLite read model、本地 Web UI, 以及只作用于本仓库的 Codex Skill 与 Hook. 运行时 Library 整体不进入 Git, clone 后通过已跟踪的 Schema、fixtures、CLI 和文档获得完整格式契约.
 
+Phase 17 已交付 Creation Purge 与 Image Asset Purge 的核心 vertical slice, 包括 shared verified replacement、CLI、API 与 Detail Danger Zone. 完整 fault injection、异步 maintenance progress 与 browser E2E 尚未完成, 相关正式文档继续保持 `draft`; 不要手工删除 managed Archive 文件.
+
 ## Quick Start
 
 需要 Node.js 24 和 npm.
@@ -97,6 +99,7 @@ npm run docs:check
 - [系统架构](./docs/design/system-architecture.md)
 - [Asset Library 设计](./docs/design/asset-library.md)
 - [Generation Workflow 设计](./docs/design/generation-workflow.md)
+- [Purge Workflow 设计](./docs/design/purge-workflow.md)
 - [Web UI 设计](./docs/design/web-ui.md)
 - [开发指南](./docs/development/guide.md)
 - [测试策略](./docs/development/testing.md)

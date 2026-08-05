@@ -1,11 +1,12 @@
 ---
 title: User Guide
-status: accepted
+status: draft
 owner: project
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 related:
   - ../product/requirements.md
   - ../design/generation-workflow.md
+  - ../design/purge-workflow.md
   - ../design/web-ui.md
 ---
 
@@ -20,6 +21,7 @@ related:
 - 从同一个 Prompt 持续迭代, 比较不同版本, 并回到满意的历史版本.
 - 在 Web UI 中查看结果、参考关系和生成记录.
 - 正确处理附件路径、生成失败、安全拒绝和中断记录.
+- 在 Detail Danger Zone 中准备并确认不可恢复的 Creation 或 Image Asset Purge.
 
 ## 1. 先理解 4 个概念
 
@@ -33,6 +35,8 @@ related:
 | Generation      | 一次真实的图片工具调用及其结果              | 不会. 成功、失败和中断都会保留   |
 
 最重要的区别是: `Prompt Draft` 是工作稿, `Prompt Revision` 是已经使用过的历史快照. 修改 Draft 不会改写过去的图片和记录.
+
+表中的“不会覆盖”描述普通编辑与生成行为. 显式 Purge 是独立的不可恢复操作, 会在强确认后物理删除选定目标.
 
 ![从 Prompt 和参考图得到新图片的示意图](./assets/generation-overview.png)
 
@@ -312,6 +316,28 @@ Replay 表示用相同的历史输入再执行一次, 但仍会创建新的 Gene
 - 工具调用成功、失败还是中断.
 - 同一 Creation 还有哪些前后版本.
 
+### 7.4 永久删除 Creation
+
+> Phase 17 Purge 核心 vertical slice 已实现, 但完整 fault injection 与 maintenance progress hardening 尚未完成. 在对应文档恢复为 `accepted` 前, 不要手工删除 Library 中的 managed 文件.
+
+实现完成后, 进入 Creation Detail 页面底部的 `Danger Zone`, 选择 `Prepare Creation Purge`. 页面会列出将删除的 Draft、Prompt Revision、Generation、Curation、Generation Issue、Reference relation 与 recovery evidence, 并单独列出仍会保留的 Image Asset.
+
+Creation Purge 不等同于 `shelved`. 它不可恢复, 但不会自动删除任何生成图片或参考图片. 检查计划后, 输入页面要求的完整 `PURGE CREATION <creationId>` 短语才能执行. Purge 完成后页面进入 `/creations`, 旧链接返回 Not found.
+
+### 7.5 永久删除 Image Asset
+
+Image Asset Purge 入口位于 Image Detail 页面底部的 `Danger Zone`, 不在 Gallery 或 References 卡片上提供快捷删除.
+
+如果图片仍是任一存续 Generation 的 Output 或 Reference, 页面会列出阻塞的 Creation 与 Generation, 且不能强制绕过. 需要先 Purge 对应 Creation, 再重新准备 Image Asset Purge. 删除 A、B 两张有关联的图片时, 先移除引用 A 的 B Generation 所属 Creation, 再移除产生 A 的存续 Creation, 最后分别 Purge A 与 B Image Asset.
+
+Image Asset Purge 删除 managed payload、Image Curation 与 thumbnail, 但不会删除 `inbox/` 中内容相同的文件或 Library 外部原文件. 页面会提示 exact-content Inbox match, 由用户另行决定是否处理.
+
+### 7.6 Purge 被 recovery evidence 阻塞
+
+未恢复 staging 或 quarantine 默认阻塞 Purge. 如果你明确不再需要这些恢复证据, 可以在 Purge Plan 中逐个选择 transaction ID, 阅读不可逆说明并二次确认 Recovery Evidence Abandonment. 存活 owner 或仍在执行的图片工具调用不能绕过.
+
+Purge 执行后进入 maintenance progress 页面. Cutover 前失败不会改变原 Library; Cutover 后系统只会继续完成清理, 不会恢复包含已删除数据的旧 Library.
+
 ## 8. 失败与恢复
 
 ### 8.1 failed
@@ -336,6 +362,8 @@ Recovery 操作可能发布、取消或隔离事务. 先使用 dry-run 或预览
 
 Gallery 顶部会显示 active Creation 的最新问题. 后续一次成功 Generation 会让该 Creation 的全局 Issue 消失, 但历史失败仍保留在 Creation Timeline 中. `shelved` Creation 不进入全局问题区域.
 
+Creation Purge 完成并同步 index 后, 该 Creation 与全部 Generation 已不存在, 因而对应 Generation Issue 同时消失. 系统不会保留已 Purge Issue 的历史卡片.
+
 ## 9. 常见问题
 
 ### Web UI 中为什么没有 Generate 按钮?
@@ -352,7 +380,7 @@ Gallery 顶部会显示 active Creation 的最新问题. 后续一次成功 Gene
 
 ### 为什么差的结果也被保存?
 
-为了保持完整历史, 每个真实输出都会归档. 主观质量由 Gallery 收藏、标签和备注处理, 不在归档阶段删除.
+为了保持完整历史, 每个真实输出都会先归档. 主观质量通常由 Gallery 收藏、标签和备注处理. 如果确实需要永久删除, 使用 Detail 页面的 Purge Plan; 不要直接修改 Library 文件.
 
 ### 修改 Draft 会不会改变旧图片?
 

@@ -12,10 +12,13 @@ import {
   commitGeneration,
   completeGeneration,
   createCreation,
+  creationPurgeTarget,
+  executePurge,
   failGeneration,
   finalizeGenerationHappyPath,
   findGitRoot,
   importImageAsset,
+  imagePurgeTarget,
   inspectImageSource,
   initLibrary,
   inspectRecoveryTransaction,
@@ -25,9 +28,11 @@ import {
   assertPreparedPromptHash,
   mergeLibrary,
   persistLibrarySelection,
+  preparePurge,
   prepareGeneration,
   quarantineTransaction,
   readDraft,
+  readPurgeStatus,
   recoverCommit,
   recoverFinalizeInterrupted,
   resolveLibrary,
@@ -43,11 +48,15 @@ import {
   type GenerationPreflightRequest,
   type PrepareGenerationRequest,
 } from "@text-to-image/archive";
-import { ReadModel, type IndexCatchUpResult } from "@text-to-image/read-model";
+import {
+  IndexCoordinationError,
+  ReadModel,
+  type IndexCatchUpResult,
+} from "@text-to-image/read-model";
 
 interface ParsedArguments {
   positionals: string[];
-  options: Map<string, string | true>;
+  options: Map<string, string | string[] | true>;
 }
 
 interface CliResult {
@@ -97,6 +106,11 @@ export async function run(argv: string[]): Promise<CliResult> {
         "recover.finalize-interrupted",
         "recover.commit",
         "recover.quarantine",
+        "purge.creation.prepare",
+        "purge.creation.execute",
+        "purge.image.prepare",
+        "purge.image.execute",
+        "purge.status",
       ],
     });
   }
@@ -341,12 +355,17 @@ export async function run(argv: string[]): Promise<CliResult> {
         await readModel.open();
         index = await readModel.catchUp();
       } catch (error) {
+        const status = await readModel.status().catch(() => null);
         index = {
           status: "degraded",
           processed: 0,
           total: 0,
-          lastIndexedMarker: null,
+          lagCount: status?.lagCount ?? 0,
+          lastIndexedMarker: status?.lastIndexedMarker ?? null,
           failedMarker: null,
+          code:
+            status?.code ??
+            (error instanceof IndexCoordinationError ? error.code : "INDEX_REBUILD_FAILED"),
           error: error instanceof Error ? error.message : String(error),
         };
       }
@@ -459,6 +478,36 @@ export async function run(argv: string[]): Promise<CliResult> {
       ),
     );
   }
+  if (command === "purge" && (subcommand === "creation" || subcommand === "image")) {
+    const target =
+      subcommand === "creation"
+        ? creationPurgeTarget(stringOption(parsed, "creation"))
+        : imagePurgeTarget(stringOption(parsed, "asset"));
+    const abandonRecoveryTransactionIds = stringOptions(parsed, "abandon-recovery");
+    if (action === "prepare") {
+      return success(preparePurge(resolved.libraryRoot, target, { abandonRecoveryTransactionIds }));
+    }
+    if (action === "execute") {
+      const result = executePurge(resolved.libraryRoot, target, {
+        planDigest: stringOption(parsed, "plan-digest"),
+        confirmation: stringOption(parsed, "confirmation"),
+        abandonRecoveryTransactionIds,
+      });
+      const readModel = new ReadModel(resolved.libraryRoot);
+      try {
+        await readModel.open();
+        await readModel.rebuild();
+      } finally {
+        readModel.close();
+      }
+      return success(result);
+    }
+  }
+  if (command === "purge" && subcommand === "status") {
+    return success({
+      operation: readPurgeStatus(resolved.libraryRoot, stringOption(parsed, "operation", false)),
+    });
+  }
 
   throw new ArchiveError("LIBRARY_CONFIG_INVALID", "Unknown assetctl command.", {
     positionals: parsed.positionals,
@@ -467,7 +516,7 @@ export async function run(argv: string[]): Promise<CliResult> {
 
 function parseArguments(argv: string[]): ParsedArguments {
   const positionals: string[] = [];
-  const options = new Map<string, string | true>();
+  const options = new Map<string, string | string[] | true>();
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index]!;
     if (!value.startsWith("--")) {
@@ -477,7 +526,15 @@ function parseArguments(argv: string[]): ParsedArguments {
     const name = value.slice(2);
     const next = argv[index + 1];
     if (next && !next.startsWith("--")) {
-      options.set(name, next);
+      const current = options.get(name);
+      options.set(
+        name,
+        typeof current === "string"
+          ? [current, next]
+          : Array.isArray(current)
+            ? [...current, next]
+            : next,
+      );
       index += 1;
     } else {
       options.set(name, true);
@@ -497,10 +554,17 @@ function stringOption(
   if (typeof value === "string") {
     return value;
   }
+  if (Array.isArray(value) && value.length > 0) return value.at(-1);
   if (!required) {
     return undefined;
   }
   throw new ArchiveError("LIBRARY_CONFIG_INVALID", `Missing required --${name} option.`);
+}
+
+function stringOptions(parsed: ParsedArguments, name: string): string[] {
+  const value = parsed.options.get(name);
+  if (typeof value === "string") return [value];
+  return Array.isArray(value) ? value : [];
 }
 
 export function readBoundedStdin(fd = 0, maxBytes = MAX_STDIN_BYTES): Promise<string> {

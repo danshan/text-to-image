@@ -221,6 +221,8 @@ describe("Phase 13 generation contracts", () => {
         },
       });
       expect(degraded.status).toBe("degraded");
+      expect(degraded.code).toBe("INDEX_PROJECTION_FAILED");
+      expect(degraded.lagCount).toBe(1);
       expect(degraded.lastIndexedMarker).toBe(previous);
       const recovered = new ReadModel(libraryRoot);
       await recovered.open();

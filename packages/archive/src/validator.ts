@@ -1,5 +1,5 @@
 import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   ArchiveError,
   LIBRARY_FORMAT_VERSION,
@@ -189,7 +189,12 @@ export function validateLibrary(
   };
 }
 
-export function assertLibraryValid(libraryRoot: string, mode: "quick" | "full" = "quick"): void {
+export function assertLibraryValid(
+  libraryRoot: string,
+  mode: "quick" | "full" = "quick",
+  allowPurgeMaintenance = false,
+): void {
+  if (!allowPurgeMaintenance) assertPurgeMaintenanceInactive(libraryRoot);
   const report = validateLibrary(libraryRoot, mode);
   if (!report.valid) {
     throw new ArchiveError(
@@ -198,6 +203,30 @@ export function assertLibraryValid(libraryRoot: string, mode: "quick" | "full" =
       { diagnostics: report.diagnostics },
       "Run assetctl validate --full and inspect the reported paths.",
     );
+  }
+}
+
+function assertPurgeMaintenanceInactive(libraryRoot: string): void {
+  const canonicalRoot = resolve(libraryRoot);
+  const parent = dirname(canonicalRoot);
+  if (!pathExists(parent)) return;
+  for (const name of readdirSync(parent)) {
+    if (!/^\.text-to-image-purge-[a-f0-9-]{36}\.json$/u.test(name)) continue;
+    try {
+      const value = readJson(join(parent, name)) as {
+        libraryRoot?: unknown;
+        operationId?: unknown;
+      };
+      if (typeof value.libraryRoot !== "string" || resolve(value.libraryRoot) !== canonicalRoot)
+        continue;
+      throw new ArchiveError(
+        "PURGE_MAINTENANCE_ACTIVE",
+        "The Asset Library is in Purge maintenance.",
+        { operationId: typeof value.operationId === "string" ? value.operationId : null },
+      );
+    } catch (error) {
+      if (error instanceof ArchiveError) throw error;
+    }
   }
 }
 

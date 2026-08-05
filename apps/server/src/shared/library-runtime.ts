@@ -4,9 +4,19 @@ import { access, lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import {
   canonicalizePossiblyMissing,
+  executePurge,
   initLibrary,
   persistLibrarySelection,
+  preparePurge,
+  readPurgeStatus,
+  recoverPurge,
   validateLibrary,
+  type ExecutePurgeRequest,
+  type ExecutePurgeResult,
+  type PreparePurgeOptions,
+  type PurgeJournal,
+  type PurgePlan,
+  type PurgeTarget,
 } from "@text-to-image/archive";
 import type {
   LibraryState,
@@ -73,15 +83,23 @@ function copyTransition(transition: LibraryTransition): LibraryTransition {
 
 export class LibraryRuntime {
   readonly #gitRoot: string;
+  readonly #drainTimeoutMs: number;
   #context: LibraryContext | null;
   #state: LibraryState;
   #transition: PreparedTransition | null = null;
   #activeRequests = 0;
   #drainWaiters: Array<() => void> = [];
   #switching = false;
+  #maintenance = false;
 
-  private constructor(gitRoot: string, libraryRoot: string, context: LibraryContext | null) {
+  private constructor(
+    gitRoot: string,
+    libraryRoot: string,
+    context: LibraryContext | null,
+    drainTimeoutMs: number,
+  ) {
     this.#gitRoot = gitRoot;
+    this.#drainTimeoutMs = drainTimeoutMs;
     this.#context = context;
     this.#state = context
       ? { status: "ready", libraryRoot: context.archive.libraryRoot }
@@ -91,22 +109,34 @@ export class LibraryRuntime {
   static async create(options: {
     gitRoot: string;
     libraryArgument?: string;
+    drainTimeoutMs?: number;
   }): Promise<LibraryRuntime> {
     const archive = createArchiveAdapter(options);
+    recoverPurge(archive.libraryRoot);
     const reason = await unavailableReason(archive.libraryRoot);
     if (reason) {
-      const runtime = new LibraryRuntime(options.gitRoot, archive.libraryRoot, null);
+      const runtime = new LibraryRuntime(
+        options.gitRoot,
+        archive.libraryRoot,
+        null,
+        options.drainTimeoutMs ?? 30_000,
+      );
       runtime.#state = unavailableState(archive.libraryRoot, reason);
       return runtime;
     }
     const readModel = new ReadModel(archive.libraryRoot);
     await readModel.open();
-    return new LibraryRuntime(options.gitRoot, archive.libraryRoot, {
-      archive,
-      readModel,
-      service: new LibraryService(archive, readModel),
-      thumbnails: new ThumbnailCache(archive.libraryRoot),
-    });
+    return new LibraryRuntime(
+      options.gitRoot,
+      archive.libraryRoot,
+      {
+        archive,
+        readModel,
+        service: new LibraryService(archive, readModel),
+        thumbnails: new ThumbnailCache(archive.libraryRoot),
+      },
+      options.drainTimeoutMs ?? 30_000,
+    );
   }
 
   get state(): LibraryState {
@@ -118,6 +148,14 @@ export class LibraryRuntime {
   }
 
   async acquire(): Promise<{ context: LibraryContext; release: () => void }> {
+    if (this.#maintenance) {
+      throw new AppError(
+        "LIBRARY_MAINTENANCE",
+        "The Asset Library is completing Purge maintenance.",
+        503,
+        { operation: this.purgeStatus() },
+      );
+    }
     if (this.#switching) {
       throw new AppError(
         "LIBRARY_SWITCHING",
@@ -159,6 +197,62 @@ export class LibraryRuntime {
       return await action(lease.context);
     } finally {
       lease.release();
+    }
+  }
+
+  async preparePurge(target: PurgeTarget, options?: PreparePurgeOptions): Promise<PurgePlan> {
+    return this.withContext(({ archive }) => preparePurge(archive.libraryRoot, target, options));
+  }
+
+  purgeStatus(operationId?: string): PurgeJournal | null {
+    return readPurgeStatus(this.#state.libraryRoot, operationId);
+  }
+
+  async executePurge(
+    target: PurgeTarget,
+    request: ExecutePurgeRequest,
+  ): Promise<ExecutePurgeResult> {
+    if (this.#switching) {
+      throw new AppError(
+        "PURGE_MAINTENANCE_ACTIVE",
+        "The Asset Library is already in maintenance.",
+        409,
+      );
+    }
+    if (this.#state.status !== "ready" || !this.#context) {
+      throw new AppError("LIBRARY_UNAVAILABLE", "The Asset Library is unavailable.", 503);
+    }
+    this.#switching = true;
+    const libraryRoot = this.#state.libraryRoot;
+    let contextClosed = false;
+    try {
+      await this.#drain();
+      this.#context.readModel.close();
+      contextClosed = true;
+      const result = executePurge(libraryRoot, target, request);
+      await rebuildReadModel(libraryRoot);
+      this.#context = await this.#openContext(libraryRoot);
+      this.#maintenance = false;
+      return result;
+    } catch (error) {
+      if (readPurgeStatus(libraryRoot)) {
+        this.#maintenance = true;
+        this.#context = null;
+        throw error;
+      }
+      if (contextClosed) {
+        try {
+          if (validateLibrary(libraryRoot, "quick").valid) {
+            this.#context = await this.#openContext(libraryRoot);
+          }
+        } catch {
+          this.#context = null;
+          this.#state = unavailableState(libraryRoot, "permission_denied");
+        }
+      }
+      throw error;
+    } finally {
+      this.#switching = false;
     }
   }
 
@@ -321,6 +415,41 @@ export class LibraryRuntime {
 
   async #drain(): Promise<void> {
     if (this.#activeRequests === 0) return;
-    await new Promise<void>((resolveDrain) => this.#drainWaiters.push(resolveDrain));
+    await new Promise<void>((resolveDrain, rejectDrain) => {
+      const waiter = (): void => {
+        clearTimeout(timeout);
+        resolveDrain();
+      };
+      const timeout = setTimeout(() => {
+        const index = this.#drainWaiters.indexOf(waiter);
+        if (index >= 0) this.#drainWaiters.splice(index, 1);
+        rejectDrain(
+          new AppError(
+            "LIBRARY_DRAIN_TIMEOUT",
+            "The Asset Library could not finish active requests before maintenance.",
+            503,
+            { activeRequests: this.#activeRequests, timeoutMs: this.#drainTimeoutMs },
+            "Retry after active Library requests finish or restart the local server.",
+          ),
+        );
+      }, this.#drainTimeoutMs);
+      timeout.unref();
+      this.#drainWaiters.push(waiter);
+    });
+  }
+
+  async #openContext(libraryRoot: string): Promise<LibraryContext> {
+    const archive = createArchiveAdapter({
+      gitRoot: this.#gitRoot,
+      libraryArgument: libraryRoot,
+    });
+    const readModel = new ReadModel(archive.libraryRoot);
+    await readModel.open({ rebuildIfMissing: false });
+    return {
+      archive,
+      readModel,
+      service: new LibraryService(archive, readModel),
+      thumbnails: new ThumbnailCache(archive.libraryRoot),
+    };
   }
 }

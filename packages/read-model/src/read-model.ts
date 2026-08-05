@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import {
   assertLibraryManifestPresent,
@@ -8,6 +8,7 @@ import {
   markerLagCount,
   rebuildReadModel,
 } from "./rebuild.js";
+import { IndexCoordinationError, type IndexWriterOptions } from "./index-writer-coordinator.js";
 import { READ_MODEL_VERSION } from "./schema.js";
 import type {
   GalleryQuery,
@@ -18,10 +19,31 @@ import type {
   IndexedRevision,
   IndexStatus,
   IndexCatchUpResult,
+  IndexDegradationCode,
 } from "./types.js";
 
 type SqlValue = string | number | bigint | Uint8Array | null;
 type SqlRow = Record<string, SqlValue>;
+
+class RebuildableIndexError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "RebuildableIndexError";
+  }
+}
+
+function isRebuildableIndexError(error: unknown): boolean {
+  if (error instanceof RebuildableIndexError) return true;
+  if (!(error instanceof Error)) return false;
+  const sqlite = error as Error & { errcode?: unknown; errstr?: unknown };
+  return (
+    sqlite.errcode === 11 ||
+    sqlite.errcode === 26 ||
+    sqlite.errstr === "database disk image is malformed" ||
+    sqlite.errstr === "file is not a database" ||
+    /^no such table: (?:meta|sqlite_schema)$/u.test(sqlite.message)
+  );
+}
 
 function stringColumn(row: SqlRow, key: string): string {
   const value = row[key];
@@ -98,34 +120,31 @@ export class ReadModel {
   #rebuildPromise: Promise<void> | null = null;
   #catchUpPromise: Promise<IndexCatchUpResult> | null = null;
   #degradedError: string | null = null;
+  #degradedCode: IndexDegradationCode | null = null;
+  readonly #writerOptions: IndexWriterOptions;
 
-  constructor(libraryRoot: string) {
+  constructor(libraryRoot: string, options: { writer?: IndexWriterOptions } = {}) {
     this.#root = resolve(libraryRoot);
     this.#path = join(this.#root, ".cache", "index.sqlite");
+    this.#writerOptions = options.writer ?? {};
   }
 
   async open(options: { rebuildIfMissing?: boolean } = {}): Promise<void> {
     await assertLibraryManifestPresent(this.#root);
     try {
-      this.#database = new DatabaseSync(this.#path, { readOnly: true });
-      const schema = this.#database
-        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
-        .get() as { value?: unknown } | undefined;
-      if (schema?.value !== String(READ_MODEL_VERSION)) {
-        throw new Error("Read model schema version is unsupported.");
-      }
-      const markerCursor = this.#database
-        .prepare("SELECT value FROM meta WHERE key = 'indexed_marker_ids'")
-        .get() as { value?: unknown } | undefined;
-      if (!markerCursor) {
-        this.close();
-        await this.rebuild();
-        return;
-      }
+      await access(this.#path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if (options.rebuildIfMissing === false) throw error;
+      await this.#replaceReadModel(true);
+      return;
+    }
+    try {
+      this.#database = this.#openCurrentDatabase();
     } catch (error) {
       this.close();
-      if (options.rebuildIfMissing === false) throw error;
-      await this.rebuild();
+      if (options.rebuildIfMissing === false || !isRebuildableIndexError(error)) throw error;
+      await this.#replaceReadModel(true);
       return;
     }
     if ((await this.status()).lagCount > 0) await this.catchUp();
@@ -165,25 +184,82 @@ export class ReadModel {
         status: status.lagCount === 0 ? "ready" : "degraded",
         processed: 0,
         total: 0,
+        lagCount: status.lagCount,
         lastIndexedMarker: status.lastIndexedMarker,
         failedMarker: status.lagCount === 0 ? null : status.latestArchiveMarker,
+        ...(status.code ? { code: status.code } : {}),
         ...(status.error ? { error: status.error } : {}),
       };
     }
-    this.close();
-    const result = await catchUpReadModel(this.#root);
+    const result = await catchUpReadModel(this.#root, undefined, {
+      writer: this.#writerOptions,
+    });
     this.#degradedError = result.error ?? null;
-    this.#database = new DatabaseSync(this.#path, { readOnly: true });
+    this.#degradedCode = result.code ?? null;
+    const replacement = this.#openCurrentDatabase();
+    this.#database = replacement;
+    current.close();
     return result;
   }
 
-  async #replaceReadModel(): Promise<void> {
-    await rebuildReadModel(this.#root);
-    const replacement = new DatabaseSync(this.#path, { readOnly: true });
-    const previous = this.#database;
-    this.#database = replacement;
-    this.#degradedError = null;
-    previous?.close();
+  async #replaceReadModel(reuseConcurrentReplacement = false): Promise<void> {
+    try {
+      await rebuildReadModel(this.#root, undefined, {
+        ...this.#writerOptions,
+        ...(reuseConcurrentReplacement
+          ? { skipIfCurrentUsable: () => this.#currentDatabaseIsUsable() }
+          : {}),
+      });
+      const replacement = this.#openCurrentDatabase();
+      const previous = this.#database;
+      this.#database = replacement;
+      this.#degradedError = null;
+      this.#degradedCode = null;
+      previous?.close();
+    } catch (error) {
+      if (error instanceof IndexCoordinationError) {
+        this.#degradedCode = error.code;
+        this.#degradedError = error.message;
+      }
+      throw error;
+    }
+  }
+
+  #currentDatabaseIsUsable(): boolean {
+    try {
+      const database = this.#openCurrentDatabase();
+      database.close();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #openCurrentDatabase(): DatabaseSync {
+    const database = new DatabaseSync(this.#path, { readOnly: true });
+    try {
+      const schema = database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value?: unknown } | undefined;
+      if (schema?.value !== String(READ_MODEL_VERSION)) {
+        throw new RebuildableIndexError("Read model schema version is unsupported.");
+      }
+      const markerCursor = database
+        .prepare("SELECT value FROM meta WHERE key = 'indexed_marker_ids'")
+        .get() as { value?: unknown } | undefined;
+      if (!markerCursor) {
+        throw new RebuildableIndexError("Read model Marker cursor is missing.");
+      }
+      const journal = database.prepare("PRAGMA journal_mode").get() as
+        { journal_mode?: unknown } | undefined;
+      if (journal?.journal_mode !== "delete") {
+        throw new RebuildableIndexError("Read model journal mode requires replacement.");
+      }
+      return database;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
   }
 
   #db(): DatabaseSync {
@@ -200,6 +276,7 @@ export class ReadModel {
         lastIndexedMarker: null,
         lagCount: latest ? 1 : 0,
         ...(this.#degradedError ? { degraded: true, error: this.#degradedError } : {}),
+        ...(this.#degradedCode ? { code: this.#degradedCode } : {}),
       };
     }
     const row = this.#db()
@@ -227,6 +304,7 @@ export class ReadModel {
       lastIndexedMarker: indexed,
       lagCount,
       ...(this.#degradedError ? { degraded: true, error: this.#degradedError } : {}),
+      ...(this.#degradedCode ? { code: this.#degradedCode } : {}),
     };
   }
 

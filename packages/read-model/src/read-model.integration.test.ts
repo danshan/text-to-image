@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -177,6 +178,42 @@ afterEach(async () => {
 });
 
 describe("ReadModel", () => {
+  it("reopens an empty Library with an explicit empty Marker cursor", async () => {
+    const root = await mkdtemp(join(tmpdir(), "text-to-image-read-model-empty-"));
+    roots.push(root);
+    await writeFile(
+      join(root, "library.json"),
+      json({
+        schemaVersion: 1,
+        formatVersion: 1,
+        libraryId: "d755546c-4fe5-47eb-901c-d2a532cd28e0",
+        createdAt: "2026-08-06T00:00:00.000Z",
+        hashAlgorithm: "sha256",
+      }),
+    );
+    for (const directory of ["archive/commits", "curation/creations", "curation/images"]) {
+      await mkdir(join(root, ...directory.split("/")), { recursive: true });
+    }
+
+    const initial = new ReadModel(root);
+    await initial.open();
+    expect(await initial.status()).toMatchObject({
+      latestArchiveMarker: null,
+      lastIndexedMarker: null,
+      lagCount: 0,
+    });
+    initial.close();
+
+    const reopened = new ReadModel(root);
+    await reopened.open({ rebuildIfMissing: false });
+    expect(await reopened.status()).toMatchObject({
+      latestArchiveMarker: null,
+      lastIndexedMarker: null,
+      lagCount: 0,
+    });
+    reopened.close();
+  });
+
   it("does not create the Library root or cache when the manifest is missing", async () => {
     const owner = await mkdtemp(join(tmpdir(), "text-to-image-read-model-missing-"));
     roots.push(owner);
@@ -365,5 +402,25 @@ describe("ReadModel", () => {
     await rebuilding;
     expect(model.listGallery({ limit: 10 }).total).toBe(1);
     model.close();
+  });
+
+  it("replaces a legacy WAL index with a single-file DELETE journal index", async () => {
+    const { root } = await fixture();
+    const initial = new ReadModel(root);
+    await initial.rebuild();
+    initial.close();
+    const indexPath = join(root, ".cache", "index.sqlite");
+    const legacy = new DatabaseSync(indexPath);
+    legacy.prepare("PRAGMA journal_mode = WAL").get();
+    legacy.close();
+
+    const migrated = new ReadModel(root);
+    await migrated.open();
+    expect(migrated.listGallery({ limit: 10 }).total).toBe(1);
+    migrated.close();
+
+    const database = new DatabaseSync(indexPath, { readOnly: true });
+    expect(database.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+    database.close();
   });
 });

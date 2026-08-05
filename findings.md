@@ -30,11 +30,11 @@
 - Asset Library 可以位于仓库外的任意本地目录; 路径优先级为 CLI 参数、本机忽略配置、仓库默认配置, 相对路径始终以 Git root 解析.
 - Versioned JSON Schema、最小合法 fixtures、初始化器和迁移器进入 Git; `assetctl init` 根据契约创建运行时 Library.
 - 多个生成可以并行, Archive 最终提交使用短时全局锁.
-- 第一版不物理删除 Archive 内容, 仅通过 Curation 隐藏或归档.
+- 普通 mutation 不物理删除 Archive 内容; Phase 17 新增显式、不可恢复且经过两阶段确认的 Creation Purge 与 Image Asset Purge.
 - Web UI 默认使用 Image Asset 图片网格, Creation 是二级组织与历史视图.
 - 第一版使用 SQLite 全文搜索和结构化过滤, 不实现语义或视觉相似度搜索.
 - Web UI 不直接启动 Codex 或图片生成; 用户必须在 Codex 中显式调用仓库级 Skill.
-- MVP 不包含多用户、远程访问、云同步、Purge、语义搜索、实时协作、批量调度或桌面封装.
+- MVP 不包含多用户、远程访问、云同步、批量或级联 Purge、自动 garbage collection、语义搜索、实时协作、批量调度或桌面封装.
 - MVP 正式支持 macOS, Linux 为 best-effort, Windows 不支持; 实现仍避免不必要的 OS-specific 逻辑.
 - MVP 验收覆盖 Archive 不变量、故障注入、并发提交、Skill 与 Hook、Web UI 安全、规模基准和文档一致性.
 - Library root、manifest 或权限缺失统一为 Library Unavailable, 不等同于 Archive corruption 或 Index failure; Server 不自动创建 Library 或 fallback path.
@@ -105,6 +105,34 @@
 - detached Server 不能只用 PID 判定 owner, 否则 stale metadata 遇到 PID reuse 可能向无关进程发送信号. 唯一 `argv0` process identity 与 PID liveness 共同校验后才能执行 stop.
 - daemon readiness 必须来自真实 Server entrypoint. Parent-child IPC 可以在不增加公开 HTTP contract 或 readiness file 的情况下传递 PID 与 concrete URLs.
 - daemon 的 test runtime directory 必须由 test-owned temp root 注入, 避免测试读取、停止或删除开发者当前 `.runtime/daemon/`.
+
+## Phase 17 Purge Design Findings
+
+- Creation 的私有历史与 Library 级 Image Asset 必须分开删除. Creation Purge 删除身份、Draft、Curation、Revision、Generation 与关系, 但不级联删除任何 Image Asset.
+- Image Asset Purge 必须从权威 Generation graph 枚举全部 Output 与 Reference blocker. References 是存续 usage 的派生视图, 不是“曾经引用”的永久历史.
+- 现有 Commit Marker 直接要求 listed path 存在且 digest 匹配, 因此原地删除会产生可见 corruption window. verified replacement 先构建并完整校验 surviving Library, 再进入不可逆 Cutover.
+- 完整物理删除与永久 tombstone 冲突. 本阶段选择完成态不保留目标 identity, 接受显式 Library Merge 可以重新引入相同 identity 或 content.
+- Cutover 前可以清理 candidate 并保持 original Library; Cutover 后不得 rollback 到包含目标的 retired root, restart recovery 只能 roll forward.
+- `inbox/` 是用户直接管理的输入区, 不具备受控资产所有权. Image Asset Purge 可以报告 exact-content match, 但不能自动删除 Inbox 或外部 source.
+- staging 与 quarantine 默认保留 recovery evidence. Purge 只有在 dry-run 列出 exact transaction 且用户二次确认 Recovery Evidence Abandonment 后才能清除; live owner 不能绕过.
+- Purge Plan 使用单目标、whole-snapshot digest、exact confirmation 与 execute-time recheck, 避免 TOCTOU 和无上下文批量误删.
+- 完成态 Library 继续符合 format `1`; Purge Plan 与 durable journal 使用独立临时 Schema, 不增加永久 Archive record kind 或 Commit Marker operation.
+- Fastify `onResponse` 只覆盖 response 已发送的终止路径. Client abort 或 socket timeout 可能绕过该 hook; Library request lease 必须同时跟踪 handler completion 与 response closure, 并在两者都成立后幂等释放.
+- Purge drain 不能无限等待 active request. 30 秒 deadline 在 journal 创建前返回 `LIBRARY_DRAIN_TIMEOUT`, 因而不会触碰 active Library, 同时避免 Web 永久停留在 maintenance 提示.
+
+## Phase 18 Read Model Coordination Findings
+
+- 多个 Generation process 会分别创建 `ReadModel`; `#catchUpPromise` 与 `#rebuildPromise` 只约束单个实例, 不能阻止跨进程 writer 同时操作 `.cache/index.sqlite`.
+- 增量 catch-up 使用 `BEGIN IMMEDIATE`, full rebuild 则 rename replacement 到同一主文件. 在其他进程仍持有旧主文件及其 WAL/SHM 时替换主文件, 会造成短暂主库与 WAL generation 不一致并触发 `database disk image is malformed`.
+- 独立 `.cache/index-writer.sqlite` 可以通过 SQLite transaction 提供 OS-managed cross-process lock. Owner crash 时 kernel 自动释放锁, 不需要不安全的 PID、mtime 或 stale lock deletion heuristics.
+- Node.js 24 `DatabaseSync` constructor 支持 busy `timeout`, `database.isTransaction` 可以确认 transaction state. 当前 runtime 的 busy error 为 `code=ERR_SQLITE_ERROR`, `errcode=5`, `errstr=database is locked`.
+- Coordinator 应使用短 SQLite timeout 加 async backoff, 避免在 Server process 内同步阻塞 event loop 达 8 秒. Production 总等待上限固定为 8 秒, tests 通过内部 option 缩短.
+- Empty Library 没有 `last_indexed_marker`, 但仍必须持久化 `indexed_marker_ids = []`. Reopen validation 依赖显式空 cursor 区分合法空 index 与不完整 replacement.
+- 获锁后必须重新打开 index 并重新读取 Marker cursor. Lock contention、Archive corruption 与 rebuildable SQLite corruption 必须使用不同稳定 reason code, 且 contention 不能触发 rebuild.
+- 已提交 transaction 的 `.staging/` 目录不是 recovery evidence, Purge blocker 扫描必须用 Commit Marker 排除它们.
+- Purge 必须复用现有 `archive.lock`; 另建 lock 无法排除共享 writer. Durable sibling journal 还必须让所有 writer 在 maintenance 期间 fail closed.
+- macOS sibling containment 需要比较 parent `realpath`, 否则 `/var` 与 `/private/var` 会被误判为越界.
+- 两次 rename 与 journal 更新之间存在真实 crash window. Recovery 不能只信 phase, 还必须核对 active、candidate 与 retired exact path 的存在组合, 并在 cutover 已开始时 roll forward.
 
 ## Research Findings
 

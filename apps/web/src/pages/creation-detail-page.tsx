@@ -5,6 +5,7 @@ import { CopyIcon } from "../components/icons";
 import { formatDate } from "../components/image-grid";
 import { generationFailureSummary } from "../components/generation-issue";
 import { PromptDiff } from "../components/prompt-diff";
+import { PurgeDangerZone } from "../components/purge-danger-zone";
 import { RecordError, RecordLoading } from "../components/states";
 import { GenerationStatusBadge } from "../components/status";
 import { useApiResource } from "../hooks/use-api-resource";
@@ -441,6 +442,7 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
               <CopyIcon /> Copy instruction
             </button>
           </section>
+          <PurgeDangerZone api={api} kind="creation" id={creation.id} />
         </aside>
       </div>
     </div>

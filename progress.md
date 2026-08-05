@@ -371,16 +371,77 @@
 - 错误:
   - 首次 daemon integration 在 Web build 阶段失败, 因为 Vite config 把 production port `0` 当作 development port 校验. 将 host / port parsing 限定到 Vite `serve` command 后通过.
 
+### Phase 17: Creation and Image Asset Purge Design
+
+- 已完成:
+  - 使用 `$grill-with-docs`、`grilling` 与 `domain-modeling` 逐项确认 Creation Purge、Image Asset Purge、Generation Issue、Reference relation、recovery evidence、maintenance、verified replacement、Cutover、Merge、confirmation 与 Web UI 边界.
+  - 在 `CONTEXT.md` 增加 Creation Purge、Image Asset Purge、Library Maintenance、Recovery Evidence Abandonment、Purge Plan 与 Purge Cutover, 并收紧 Generation Issue、Reference Image 与 Library Merge 语义.
+  - 新增 ADR 0013, 记录拒绝原地 deletion 与永久 tombstone、采用 verified replacement 的原因和代价.
+  - 新增 `docs/design/purge-workflow.md`, 定义完整不变量、Purge Plan、阻塞关系、candidate、journal、Cutover、restart recovery、CLI/API、failure、security、compatibility 与 validation contract.
+  - 将产品需求、用户手册、系统架构、Asset Library、Generation Workflow、Web UI、开发指南与测试策略切回 `draft`, 并加入 Phase 17 实施与验收边界.
+  - 更新 README、AGENTS、文档索引、任务计划与研究记录, 明确 Purge 尚未实现, 禁止手工删除 managed Archive.
+- 当前范围:
+  - 已新增 Purge domain types、stable errors 与独立 Plan / journal JSON Schema.
+  - Shared Archive 已实现 snapshot-bound Plan、Reference blocker、Recovery Evidence Abandonment、Inbox warning、verified replacement、Marker rewrite、hard-link/copy fallback、global lock、writer maintenance guard、retired cleanup 与关键 crash-window roll-forward.
+  - CLI 已实现 Creation / Image prepare、execute、status 与重复 exact abandonment option; execute 后重建 read model.
+  - Server 已实现 Purge prepare / execute / status control plane, request drain、maintenance rejection、index rebuild、context reopen 与 session token rotation.
+  - 修复 client abort 后 Fastify `onResponse` 未执行导致 Library lease 泄漏、后续 Purge 永久等待的问题. Request lifecycle 现在联合跟踪 handler completion、response close、abort 与 timeout, drain 另有 30 秒 fail-safe deadline.
+  - Web 已在 Creation Detail 和 Image Detail 增加 Danger Zone, 展示 impact、relation blocker、recovery evidence、exact confirmation 与同步 maintenance status, 完成后导航到对应 list.
+  - 尚未完成异步 `/maintenance/purge/:operationId` progress route、全部 journal phase failpoint、locked-file / permission / mount 安全矩阵与 browser E2E; 正式文档继续保持 `draft`.
+- 实现验证:
+  - `npm run build`: passed, Web 57 modules transformed.
+  - Phase 17 focused Archive / CLI integration: 8 tests passed.
+  - Server Purge / security integration: 10 tests passed, 包含真实 loopback client abort cleanup 与 drain timeout fail-safe.
+  - `npm test`: root 5 files / 19 tests、31 Hook / Skill tests、Web 12 files / 26 tests passed.
+  - `npm run test:integration`: 8 files / 56 tests passed outside sandbox, 包含 daemon loopback lifecycle.
+  - `npm run typecheck`、`npm run lint`、`npm run format:check`、`npm run docs:check`、`npm run fixtures:validate` 与 `git diff --check`: passed.
+  - Purge Plan 与 journal JSON Schema 使用 Ajv 8 strict mode 编译通过.
+- 文档验证:
+  - `npm run docs:check`: passed, validated 36 Markdown files and 13 ADRs.
+  - `npm run format:check`: passed.
+  - `git diff --check`: passed.
+- 错误:
+  - 首次 Purge 跨文件文档补丁引用了不存在的 testing context, 整体未应用; 改为逐文件小补丁后继续.
+  - 首次 `npm run format:check` 报告 3 个新增或更新文档未格式化; 使用 repository Prettier 处理 exact files 后重新验证.
+  - 第二次 format check 只报告 `task_plan.md` 的 error table 对齐变化; 完成错误记录后统一格式化该文件.
+  - 写入最终 validation count 后 `progress.md` 表格需要重新对齐; 记录后执行一次 exact-file format.
+  - 首次记录该格式错误时使用了 Prettier 前的 table spacing, patch 未应用; 读取 exact rows 后修正.
+  - Purge Plan 初次把已提交 staging 误判为 recovery blocker; 使用 Commit Marker 排除已发布 transaction.
+  - retired cleanup 初次使用 file-oriented `rmSync`; 改为逐项安全枚举后 `rmdirSync`.
+  - restart recovery 初次 lexical 比较 macOS `/var` 与 `/private/var`; 改为 parent `realpath` containment.
+  - Web Purge test 初次使用未启用的 `jest-dom` matcher; 改用 Chai property assertion.
+  - root integration 与 fixture validation 在 sandbox 内被 loopback / `tsx` IPC policy 拒绝; scoped outside-sandbox rerun passed.
+  - Purge abort regression 的真实 loopback listener 在 sandbox 内返回 `EPERM`; scoped outside-sandbox rerun 后 10 tests passed.
+  - Phase 18 完成 `IndexCatchUpResult.lagCount` contract 后 root typecheck passed; 本轮新增的 `exactOptionalPropertyTypes` 错误已修复.
+
+### Phase 18: Cross-process Read Model Coordination
+
+- **Status:** completed
+- 已完成:
+  - 读取并复核并发故障诊断任务, 确认 transient malformed error 来自跨进程 catch-up/rebuild 缺少共同 writer coordination.
+  - 使用 `$grill-with-docs`, `grilling` 与 `domain-modeling` 逐项确认 8 秒有界等待、独立 SQLite coordinator、错误分类、typed degradation 与多进程验收边界.
+  - 通过 Context7 核对 Node.js 24 `node:sqlite` 的 `DatabaseSync` timeout 与 transaction API, 并在当前 runtime 验证 busy error fields.
+- 当前实现范围:
+  - `index-writer.sqlite` 使用 SQLite `BEGIN IMMEDIATE` 串行化跨进程 catch-up 与 rebuild, 8 秒有界等待并在 owner crash 时由 OS 自动释放.
+  - Read Model 在获得 writer ownership 后重新打开当前 index 并 rescan Archive cursor; corruption recovery 只允许首个 holder rebuild.
+  - CLI、Server health 与 Web Settings 使用稳定 degradation code, 不暴露内部 path 或 stack.
+  - Phase 18 多进程 integration 覆盖四 writer serialization、busy timeout、owner crash release 与 single corruption rebuild.
+  - Empty Library Schema 显式保存 `indexed_marker_ids = []`, 避免 reopen 把合法空 cursor 误判为不完整 replacement.
+  - 保留并行 Phase 17 Purge working tree changes, 并完成 root cross-check.
+- 错误:
+  - 首次 root format check 报告 Server lifecycle 与 Read Model 两个文件未格式化; 对 exact files 执行 Prettier 后通过.
+  - 首次完整 integration 有 13 个连锁失败, 根因是合法 Empty Library 没有 `indexed_marker_ids`; Schema 初始化显式空 cursor 并增加 reopen regression 后 9 files / 62 tests passed.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |
 | ----------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------ |
 | Clean install                       | Lockfile can reproduce dependencies                                                 | `npm ci` installed 397 packages                                                                | pass   |
 | Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                                      | pass   |
-| Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 56-module Web build passed                  | pass   |
+| Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 57-module Web build passed                  | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 5 root files / 19 tests, 31 Hook/Skill tests and 24 Web tests passed                           | pass   |
-| Integration                         | Archive、read model、HTTP security and daemon lifecycle pass                        | 7 files, 47 tests passed                                                                       | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 5 root files / 19 tests, 31 Hook/Skill tests and 26 Web tests passed                           | pass   |
+| Integration                         | Archive、read model、HTTP security and daemon lifecycle pass                        | 9 files, 62 tests passed                                                                       | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
 | Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
 | Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                                      | pass   |
@@ -388,7 +449,7 @@
 | Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                                 | pass   |
 | External Library                    | Resolver、Generation、Commit、validate and index rebuild work outside repo          | Temporary external Library reached lagCount 0 and full validation passed                       | pass   |
 | Generation workflow                 | 12 deterministic runs satisfy the repository non-model budget                       | pre-tool p95 84.01 ms, post-tool p95 172.25 ms, non-model p95 256.26 ms                        | pass   |
-| Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 34 Markdown files and 12 ADRs passed                                                           | pass   |
+| Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 36 Markdown files and 13 ADRs passed                                                           | pass   |
 | Library selection and merge         | Config persistence、dry-run、atomic apply、conflict and recovery are correct        | Archive and read model integration coverage passed                                             | pass   |
 
 ## Error Log
@@ -425,10 +486,10 @@
 
 ## 5-Question Reboot Check
 
-| Question             | Answer                                                                                                         |
-| -------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Where am I?          | Phase 15 completed                                                                                             |
-| Where am I going?    | Observe real Library provenance navigation and add regressions only for evidence-backed relationship ambiguity |
-| What is the goal?    | Build a documented local Asset Library, Codex generation workflow, and Web UI                                  |
-| What have I learned? | See `findings.md`                                                                                              |
-| What have I done?    | Linked Prompt Revision, Generation and Reference Image bidirectionally without changing Archive provenance     |
+| Question             | Answer                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Where am I?          | Phase 17 core Purge vertical slice implemented and focused tests passing; hardening remains pending         |
+| Where am I going?    | Add async maintenance progress, complete failpoint/security coverage, then run root verification            |
+| What is the goal?    | Add safe, irreversible single-target Creation and Image Asset Purge to the local Asset Library              |
+| What have I learned? | See `findings.md`                                                                                           |
+| What have I done?    | Landed domain, schemas, shared replacement writer, CLI, API, Web Danger Zones and focused integration tests |

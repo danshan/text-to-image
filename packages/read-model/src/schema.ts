@@ -4,7 +4,7 @@ export const READ_MODEL_VERSION = 1;
 
 export function createSchema(database: DatabaseSync): void {
   database.exec(`
-    PRAGMA journal_mode = WAL;
+    PRAGMA journal_mode = DELETE;
     PRAGMA foreign_keys = ON;
     CREATE TABLE meta (
       key TEXT PRIMARY KEY,
@@ -93,4 +93,5 @@ export function createSchema(database: DatabaseSync): void {
   database
     .prepare("INSERT INTO meta(key, value) VALUES ('schema_version', ?)")
     .run(String(READ_MODEL_VERSION));
+  database.prepare("INSERT INTO meta(key, value) VALUES ('indexed_marker_ids', ?)").run("[]");
 }

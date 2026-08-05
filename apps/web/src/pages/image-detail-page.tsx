@@ -3,6 +3,7 @@ import { CurationEditor } from "../components/curation-editor";
 import { formatDate } from "../components/image-grid";
 import { RecordError, RecordLoading } from "../components/states";
 import { GenerationStatusBadge } from "../components/status";
+import { PurgeDangerZone } from "../components/purge-danger-zone";
 import { useApiResource } from "../hooks/use-api-resource";
 import { creationProvenancePath, Link } from "../router";
 
@@ -113,6 +114,7 @@ export function ImageDetailPage({ api, sha256 }: { api: ApiClient; sha256: strin
               <p className="muted-copy">This asset has not been used as a Reference Image.</p>
             )}
           </section>
+          <PurgeDangerZone api={api} kind="image" id={image.sha256} />
         </aside>
       </div>
     </div>

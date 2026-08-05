@@ -15,6 +15,7 @@ import type {
   LibraryTransitionAction,
   LibraryTransitionCommitResponse,
   MutationResponse,
+  PurgePlan,
   RecoveryAction,
   RecoveryResponse,
 } from "../types";
@@ -184,6 +185,38 @@ export class ApiClient {
       },
     );
     return result.data;
+  }
+
+  async preparePurge(
+    kind: "creation" | "image",
+    id: string,
+    abandonRecoveryTransactionIds: string[] = [],
+  ): Promise<PurgePlan> {
+    const collection = kind === "creation" ? "creations" : "images";
+    const result = await this.request<MutationResponse<PurgePlan>>(
+      `/api/v1/purge/${collection}/${encodeURIComponent(id)}/prepare`,
+      {
+        method: "POST",
+        body: JSON.stringify({ abandonRecoveryTransactionIds }),
+      },
+    );
+    return result.data;
+  }
+
+  async executePurge(kind: "creation" | "image", id: string, plan: PurgePlan): Promise<void> {
+    const collection = kind === "creation" ? "creations" : "images";
+    const result = await this.request<{ data: unknown; bootstrap: BootstrapResponse }>(
+      `/api/v1/purge/${collection}/${encodeURIComponent(id)}/execute`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          planDigest: plan.planDigest,
+          confirmation: plan.confirmationPhrase,
+          abandonRecoveryTransactionIds: plan.abandonedRecoveryTransactionIds,
+        }),
+      },
+    );
+    this.bootstrap.sessionToken = result.bootstrap.sessionToken;
   }
 
   async recoveryDryRun(

@@ -37,6 +37,35 @@ export const imageParamsSchema = {
   properties: { sha256: { type: "string", pattern: sha256 } },
 } as const;
 
+export const purgePrepareSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    abandonRecoveryTransactionIds: {
+      type: "array",
+      uniqueItems: true,
+      maxItems: 100,
+      items: { type: "string", pattern: uuid },
+    },
+  },
+} as const;
+
+export const purgeExecuteSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["planDigest", "confirmation"],
+  properties: {
+    planDigest: { type: "string", pattern: sha256 },
+    confirmation: { type: "string", minLength: 1, maxLength: 200 },
+    abandonRecoveryTransactionIds: {
+      type: "array",
+      uniqueItems: true,
+      maxItems: 100,
+      items: { type: "string", pattern: uuid },
+    },
+  },
+} as const;
+
 export const galleryQuerySchema = {
   type: "object",
   additionalProperties: false,

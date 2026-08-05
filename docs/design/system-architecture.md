@@ -1,16 +1,18 @@
 ---
 title: System Architecture
-status: accepted
+status: draft
 owner: project
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 related:
   - ../product/requirements.md
   - asset-library.md
   - generation-workflow.md
   - web-ui.md
+  - purge-workflow.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
+  - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
 ---
 
 # 系统架构
@@ -62,17 +64,17 @@ flowchart LR
 
 ## Components
 
-| Component                 | Owns                                                                                | Must Not Own                                                       |
-| ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Browser Web UI            | UI state、URL state、unsubmitted form edits                                         | filesystem access、Archive write logic、generation invocation      |
-| Fastify Local Service     | listener security、HTTP validation、orchestration                                   | domain duplicate、arbitrary file endpoint、authoritative user data |
-| `assetctl`                | human/machine CLI、init、validate、commit、recover、migrate                         | independent Archive implementation                                 |
-| Shared Archive Package    | filesystem contract、hash、lock、transaction、Commit Marker、Curation atomic update | HTTP、React、Codex prompt decisions                                |
-| Read Model Package        | SQLite projection、FTS、query、thumbnail metadata                                   | non-rebuildable user data                                          |
-| Generation Skill          | Prompt orchestration、tool sequence、user confirmation boundary                     | direct Archive file writes、API key fallback in MVP                |
-| Built-in Image Generation | raster generation                                                                   | Library identity、commit、Curation                                 |
-| Project Hook              | Codex guard 和 read-only validation                                                 | asset mutation、repair、business state                             |
-| Asset Library             | authoritative runtime data                                                          | source code、global Codex config                                   |
+| Component                 | Owns                                                                                                                    | Must Not Own                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Browser Web UI            | UI state、URL state、unsubmitted form edits                                                                             | filesystem access、Archive write logic、generation invocation      |
+| Fastify Local Service     | listener security、HTTP validation、orchestration                                                                       | domain duplicate、arbitrary file endpoint、authoritative user data |
+| `assetctl`                | human/machine CLI、init、validate、commit、recover、migrate                                                             | independent Archive implementation                                 |
+| Shared Archive Package    | filesystem contract、hash、lock、transaction、Commit Marker、Curation atomic update、Purge Plan 与 verified replacement | HTTP、React、Codex prompt decisions                                |
+| Read Model Package        | SQLite projection、FTS、query、thumbnail metadata                                                                       | non-rebuildable user data                                          |
+| Generation Skill          | Prompt orchestration、tool sequence、user confirmation boundary                                                         | direct Archive file writes、API key fallback in MVP                |
+| Built-in Image Generation | raster generation                                                                                                       | Library identity、commit、Curation                                 |
+| Project Hook              | Codex guard 和 read-only validation                                                                                     | asset mutation、repair、business state                             |
+| Asset Library             | authoritative runtime data                                                                                              | source code、global Codex config                                   |
 
 ## Runtime Topology
 
@@ -123,6 +125,12 @@ Settings 显示 bootstrap 解析出的绝对 Library path, 并允许用户输入
 
 同一时间只允许一个内存态 Library transition. Candidate 的 full validation 与 Index rebuild 在旧 Library 继续服务时完成. Candidate ready 后, commit boundary 拒绝新请求并排空旧请求, 再次校验 candidate, 原子持久化 `text-to-image.local.json`, 替换 active context 并轮换 session token. 其他 Browser tab 的旧 token 随即失效. 初始化已成功而后续步骤失败时保留新 Library, 但不改变旧 active context 或持久化选择.
 
+### Purge Runtime
+
+Purge 使用与 Library selection 不同的独占 maintenance transition. Prepare 保持只读; execute 先排空全部 Library request, 阻断新的 Generation 与 mutation, 再由 Shared Archive Package 构建 sibling replacement. Candidate full validation 通过后进入不可逆 Cutover, active root 被 retired root 与 replacement root 依次 rename. Cutover 后 runtime 只暴露 bootstrap、health、Purge status 与 diagnostics control plane, 并依据 durable journal roll forward.
+
+只有 retired root 删除、replacement full validation 与 index rebuild 全部完成后, runtime 才恢复 data request 并轮换 session token. 详细文件协议和故障状态见 [Purge Workflow](./purge-workflow.md).
+
 ### Generation Runtime
 
 ```mermaid
@@ -165,6 +173,8 @@ Built-in tool call 不经过 local Web service. Web service 通过 Commit Marker
 | Staging transaction | Transaction area            |            yes | diagnostics only |
 | SQLite rows         | Read model                  |    rebuildable |             self |
 | Thumbnail           | Cache                       |    rebuildable |               no |
+| Purge Plan          | Request snapshot            |             no |               no |
+| Purge journal       | Ephemeral control state     |            yes | diagnostics only |
 | Browser theme       | Browser local preference    |            yes |               no |
 
 ## Write Paths
@@ -174,8 +184,9 @@ Built-in tool call 不经过 local Web service. Web service 通过 Commit Marker
 ```text
 Web UI -> Fastify -> Shared Archive Package -> Draft/Curation/Recovery
 Web UI -> Fastify Library Control Plane -> Init/Select/Retry
+Web UI -> Fastify Purge Control Plane -> Prepare/Execute/Status
 Codex Skill -> assetctl -> Shared Archive Package -> Archive Transaction
-Human CLI -> assetctl -> Shared Archive Package -> Init/Select/Merge/Validate/Recovery
+Human CLI -> assetctl -> Shared Archive Package -> Init/Select/Merge/Validate/Recovery/Purge
 ```
 
 禁止的入口:
@@ -259,6 +270,9 @@ Git 不保存:
 | External Library permission loss | current process                       | read-only/unavailable, no fallback Library |
 | Library transition prepare       | candidate context                     | keep old context, report retryable failure |
 | Library transition commit        | quiescent runtime boundary            | keep old selection unless persistence won  |
+| Purge candidate preparation      | sibling candidate                     | delete candidate, keep original Library    |
+| Purge after Cutover              | maintenance + durable journal         | roll forward, never reopen retired root    |
+| Purge retired cleanup            | exact validated sibling path          | remain in maintenance, no stronger delete  |
 | Hook disabled                    | Codex guard only                      | writer still rejects invalid operations    |
 
 ## Compatibility
@@ -283,4 +297,5 @@ App 启动和 Skill prepare 都执行 capabilities handshake. Unsupported future
 - failure injection 确认每个 failure domain 不污染其他层.
 - security suite 确认 local service 和 external Library path containment.
 - integration suite 确认 request-boundary unavailable detection、single transition、drain、atomic persistence、runtime swap 与 session token rotation.
+- Purge suite 确认 plan staleness、reference blockers、正常与 client-aborted request drain、bounded drain failure、candidate validation、Cutover、restart roll-forward、retired cleanup 与 residual scan.
 - docs checker 确认本总览 links 到 canonical detail, 不复制漂移的 Schema 定义.

@@ -1,17 +1,19 @@
 ---
 title: Development Guide
-status: accepted
+status: draft
 owner: project
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
   - ../design/generation-workflow.md
+  - ../design/purge-workflow.md
   - ../design/web-ui.md
   - testing.md
   - ../adr/0008-use-a-typescript-local-web-stack.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
+  - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
 ---
 
 # 开发指南
@@ -85,7 +87,7 @@ npm root `package.json` 定义:
 
 ### `packages/archive`
 
-实现 Library resolution、path containment、hash、Draft/Curation atomic update、staging、lock、Commit Marker、validator、recovery 和 migration. 这是唯一允许写 Archive 的 package.
+实现 Library resolution、path containment、hash、Draft/Curation atomic update、staging、lock、Commit Marker、validator、recovery、migration、Purge Plan 与 verified replacement. 这是唯一允许写 Archive 或执行 Purge 的 package.
 
 ### `packages/read-model`
 
@@ -170,7 +172,19 @@ npm run assetctl -- validate --library ./library
 npm run assetctl -- capabilities --format json
 npm run assetctl -- index rebuild --library ./library
 npm run assetctl -- recover list --library ./library
+npm run assetctl -- purge creation prepare --creation <creation-id> --library ./library --format json
+npm run assetctl -- purge image prepare --asset <sha256> --library ./library --format json
 ```
+
+Purge execute 必须使用 prepare 返回的 exact `planDigest` 与 confirmation, 不提供 `--force`、`--yes` 或跳过 dry-run 的 alias:
+
+```bash
+npm run assetctl -- purge creation execute --creation <creation-id> --library ./library --plan-digest <sha256> --confirmation "PURGE CREATION <creation-id>" --format json
+npm run assetctl -- purge image execute --asset <sha256> --library ./library --plan-digest <sha256> --confirmation "PURGE IMAGE <sha256>" --format json
+npm run assetctl -- purge status --operation <operation-id> --library ./library --format json
+```
+
+Recovery Evidence Abandonment 使用可重复的 `--abandon-recovery <transaction-id>` option. 每一项必须是 prepare 已列出或用户明确选择的 exact UUID; 不接受 `all`、glob 或 filesystem path.
 
 实现稳定并产生 executable package 后, 可以额外提供 `assetctl` binary, 但文档和 Skill 不依赖未安装的全局 binary. 仓库内默认调用始终可工作.
 
@@ -262,6 +276,8 @@ Wildcard bind 在启动时枚举 usable active interfaces 并输出 concrete URL
 - breaking format change 必须增加新 `vN` Schema 和 copy migration, 不修改旧 Schema 文件.
 - migration source 默认只读, destination 使用正常 Commit Marker protocol.
 - debug script 也必须调用 shared validator, 不创建隐藏格式.
+- Purge 不得使用应用外 shell 删除. Candidate、journal、Cutover、retired cleanup 与 restart recovery 必须全部位于 `packages/archive` 的 typed API.
+- Purge 完成态保持 format `1`; 临时 Purge Plan 与 journal 使用独立 versioned Schema, 不增加永久 tombstone.
 
 ## Error Model
 
@@ -366,6 +382,10 @@ Library transition prepare 可以在旧 Library 继续服务时运行. UI 轮询
 ### Index corruption
 
 停止 server, 删除 `.cache/`, 运行 index rebuild. 不修改 Archive.
+
+### Purge remains in maintenance
+
+先运行 `purge status` 或打开 `/maintenance/purge/:operationId`. Cutover 前失败会保持原 Library; Cutover 后必须根据 durable journal roll forward. 如果 retired cleanup 报告 locked file、permission 或 I/O error, 关闭持有该 exact path 的进程或恢复权限后重试 status/resume; 不手工删除 sibling directory, 不 rollback retired root, 不使用更强的删除命令.
 
 ### Hook not running
 

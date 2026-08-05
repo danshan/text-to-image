@@ -120,14 +120,23 @@ export interface IndexStatus {
   lastIndexedMarker: string | null;
   lagCount: number;
   degraded?: boolean;
+  code?: IndexDegradationCode;
   error?: string;
 }
+
+export type IndexDegradationCode =
+  | "INDEX_WRITER_BUSY"
+  | "INDEX_COORDINATOR_FAILED"
+  | "INDEX_PROJECTION_FAILED"
+  | "INDEX_REBUILD_FAILED";
 
 export interface IndexCatchUpResult {
   status: "ready" | "degraded";
   processed: number;
   total: number;
+  lagCount: number;
   lastIndexedMarker: string | null;
   failedMarker: string | null;
+  code?: IndexDegradationCode;
   error?: string;
 }

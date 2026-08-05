@@ -1,8 +1,8 @@
 ---
 title: Asset Library Design
-status: accepted
+status: draft
 owner: project
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 related:
   - ../../CONTEXT.md
   - ../adr/0001-use-the-filesystem-as-the-source-of-truth.md
@@ -13,6 +13,8 @@ related:
   - ../adr/0007-separate-curation-from-provenance.md
   - ../adr/0009-keep-runtime-libraries-out-of-source-control.md
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
+  - purge-workflow.md
+  - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
 ---
 
 # Asset Library 设计
@@ -26,7 +28,7 @@ Asset Library 是提示词、参考图、生成图片和 provenance 的本地事
 ## Invariants
 
 1. 只有被有效 Commit Marker 覆盖的 object 才属于 Archive.
-2. Commit Marker、Prompt Revision、Generation 与已提交 Image Asset 不可修改或删除.
+2. 普通写入不得修改或删除 Commit Marker、Prompt Revision、Generation 与已提交 Image Asset; 显式 Purge 只能通过 verified replacement 重建完整 Library materialization.
 3. Image Asset 的身份是 payload bytes 的 lowercase SHA-256 hex digest.
 4. Generation 只引用已提交 Prompt Revision 和 Image Asset.
 5. Prompt Revision 和 Generation 只属于一个 Creation; Image Asset 属于整个 Library.
@@ -36,6 +38,7 @@ Asset Library 是提示词、参考图、生成图片和 provenance 的本地事
 9. 单个进程一次只打开一个 Library.
 10. breaking format migration 不得原地重写源 Library.
 11. Server 只发布一个 active Library context; runtime switch 必须在排空旧请求后原子替换.
+12. Purge 完成态不保留目标 tombstone; active replacement 必须独立满足全部 format 不变量.
 
 ## Library Resolution
 
@@ -397,6 +400,19 @@ Image Curation:
 7. 按 deterministic path order 安装新增内容, 最后发布一个 `merge_library` Commit Marker. Marker 不保存 source path、Library identity 或 snapshot metadata.
 8. `inbox/`、`.cache/`、SQLite、thumbnail 和 recovery state 不参与 merge.
 
+### Purge by Verified Replacement
+
+Creation Purge 与 Image Asset Purge 的权威协议位于 [Purge Workflow](./purge-workflow.md). Purge 不在 active root 原地删除 record, 而是在同级 candidate 中重建 surviving materialization:
+
+1. `prepare` full validate 当前 Library 并生成 snapshot-bound Purge Plan, 不写文件.
+2. `execute` 排空请求、进入 Library Maintenance、获取全局锁并重算 plan digest.
+3. Candidate 保留相同 `library.json` 与 Library identity, 复制 mutable state, 对存续不可变资产使用 hard link 或 copy.
+4. 受影响 Commit Marker 只保留 surviving record entry; 空 Marker 删除. 完成态不新增 purge operation、record kind 或 tombstone.
+5. Candidate full validation 通过后进入 Cutover, 用 sibling rename 替换 active root.
+6. Cutover 后只允许 roll forward, 直到 retired root、journal 与 cache 残留物理清除, read model index ready.
+
+Creation-owned path 从 candidate 排除, 但同一 Generation Marker 首次引入的 Image Asset record 必须保留. Image Asset Purge 只排除目标 asset entry 与 payload, 并要求所有存续 Generation 已不再输出或引用它. `inbox/` 永远按用户输入区原样保留.
+
 ### Logical Commit
 
 1. staging 写完全部 object, Schema 和 cross-reference validation 通过.
@@ -428,12 +444,17 @@ Draft 与 Curation 不使用 Archive lock, 采用 expected hash 或 `entityRevis
 - Runtime root 或 manifest 消失: 首个后续 request 返回 `LIBRARY_UNAVAILABLE`; Index rebuild 不属于可用 recovery action.
 - Transition prepare 失败: 关闭 candidate handles, 保留旧 context 与持久化选择.
 - Transition commit 失败: 在持久化前保持旧 context; 已完成初始化的 candidate 不自动删除.
+- Purge prepare 或 candidate validation 失败: 删除未启用 candidate 与临时 journal, 原 Library 不变.
+- Purge Cutover 后失败: 保持 Library Maintenance, 根据 durable journal roll forward, 不恢复 retired root.
+- Retired root 删除失败: 报告 exact path 与 typed error, 不跟随 symlink、不跨 mount、不使用更强删除 primitive.
 
 ## Compatibility and Migration
 
 Schema 位于 `schemas/asset-library/v<formatVersion>/`. 每次写入都使用当前 Library version 对应 validator.
 
 当前 development baseline 不承担既有 runtime Library 的兼容负担. Safety Rejection contract 直接更新 format `1` Schema; 已符合新 validator 的旧 record 因 optional `moderation` 仍可读取, 但不提供 migration 或旧 reader compatibility guarantee. 发生不兼容时整体重新初始化 runtime Library; `.cache/` rebuild 仍只重建 derived state, 不替代 Library reinitialization.
+
+Purge 完成后的 replacement 仍是 format `1`. Purge Plan 与 sibling journal 使用独立 versioned Schema, 属于临时 control state, 不进入 Commit Marker 或长期 Archive. 不支持 Purge 的旧 reader 可以读取完成态 Library, 但任何 writer 在 maintenance lock 或 durable Purge journal 存在时都必须拒绝 mutation.
 
 兼容的 reader 扩展可以读取旧 record 而不修改 Archive. Breaking migration 使用:
 

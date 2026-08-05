@@ -1,8 +1,8 @@
 ---
 title: Testing Strategy
-status: accepted
+status: draft
 owner: project
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -12,6 +12,8 @@ related:
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
   - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
+  - ../design/purge-workflow.md
+  - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
 ---
 
 # 测试策略
@@ -54,6 +56,9 @@ related:
 - config precedence 和 Git-root-relative resolution.
 - error code mapping.
 - Image source canonicalization、inspection metadata 与 missing、unreadable、unsupported、invalid error mapping.
+- deterministic Purge Plan canonicalization、digest、confirmation phrase 与 stale snapshot comparison.
+- Purge journal phase transition、Cutover boundary 与 restart recovery decision table.
+- Image Asset Output / Reference blocker enumeration 与 single-target validation.
 
 时间、ID、hostname 和 process liveness 通过 injectable adapters 控制, 避免 nondeterministic tests.
 
@@ -70,6 +75,7 @@ related:
 - future `schemaVersion`.
 - Generation error without `moderation` and with valid input、output、unknown stages.
 - invalid moderation stage、duplicate categories 与 unexpected provider fields.
+- valid / invalid Purge Plan、journal、target union、phase、plan digest、abandonment transaction IDs 与 unknown field.
 
 所有 `fixtures/asset-libraries/v1-invalid-*` 必须返回稳定 error code 和 precise relative path.
 
@@ -95,11 +101,17 @@ JSON examples embedded in正式文档必须被提取并解析; 标记为 illustr
 - external Library absolute path.
 - root symlink canonicalization 与 internal symlink rejection.
 - Curation/Draft atomic update conflict.
-- no physical Archive deletion.
+- 普通 mutation 不执行 physical Archive deletion; Purge 只能通过 shared verified replacement protocol.
 - init 和 select 仅在成功后原子持久化 canonical Library path.
 - Library Merge dry run、same-root rejection、identity conflict、destination-wins、deduplication 和重复执行.
 - interrupted Library Merge 在 Marker 前不可见, 并可通过既有 recovery commit 完成.
 - read model 启动时按 Marker `createdAt` 检测 lag, 不依赖随机 UUID filename order.
+- Creation Purge 删除完整 owned graph 与 Curation, 保留全部 Image Asset payload 与 Image Curation.
+- Image Asset Purge 对全部 Output / Reference blocker fail closed, 无 blocker 时删除 payload、Curation、thumbnail 与 index row.
+- A 作为 B 的 Reference Image 时, 先 Purge B 所属 Creation 后 References 不再显示 A; A 仍作为资产存在, 直到其 producing relation 清除并独立 Purge.
+- Purge candidate 重写 affected Marker, 保留同 Marker 中 surviving Image Asset entry, 删除 empty Marker 并通过 full validation.
+- `inbox/` exact-content match 只产生 warning, Purge 不删除 Inbox 或 external source.
+- 显式 Library Merge 可以重新引入已 Purge identity 或 content.
 
 每个测试结束先断言 temp target 位于 test-owned root, 再删除. 禁止使用 workspace root、`$HOME` 或 unresolved variable 作为 cleanup target.
 
@@ -126,6 +138,22 @@ before_lock_release
 - rerun commit 幂等.
 - lock 不因 timeout 自动抢占.
 
+Purge 增加独立 failpoints:
+
+```text
+after_purge_journal_flush
+after_candidate_materialized
+after_candidate_validated
+after_original_retired
+after_replacement_activated
+during_retired_cleanup:<index>
+before_index_rebuild
+after_index_rebuild
+before_purge_journal_removal
+```
+
+Parent process 必须证明 Cutover 前清理 candidate 并保持 original Library, Cutover 后保持 maintenance 并只 roll forward. 任一阶段都不得同时发布两个 active root, 不得在完成后留下 retired root、journal、target identity、cache row 或 target-owned bytes.
+
 ### Concurrency Tests
 
 至少启动 8 个独立 child processes, 每个完成不同 Generation 的 staging 和 final commit. 验证:
@@ -137,6 +165,13 @@ before_lock_release
 - indexer 在 commit 后异步追平.
 
 另外测试两个进程更新同一 Draft 或 Curation, 只允许一个 expected revision 成功, 另一个返回 conflict.
+
+Purge concurrency 使用 Server request drain 与多个独立 child process 验证:
+
+- Prepare 期间允许只读查询, 但 execute recheck 可以使旧 plan stale.
+- Maintenance 开始后新的 read、Curation、Generation、Merge、Recovery 与第二个 Purge 均被拒绝.
+- 已进入的 request 在 Cutover 前完成或被有界排空, 不持有 retired-root file handle.
+- live Generation owner 不能通过 Recovery Evidence Abandonment 绕过.
 
 ### Generation Skill Tests
 
@@ -208,6 +243,10 @@ Fastify injection 或 local server 覆盖:
 - concrete interface、`0.0.0.0` 与 `::` bind contract.
 - wildcard interface URL discovery、scoped IPv6 exclusion 与 IP literal Host/Origin allowlist.
 - development listener 暴露 Vite, Fastify proxy target 保持 loopback.
+- Purge prepare / execute / status Schema、session security、exact confirmation 与 `PURGE_PLAN_STALE`.
+- maintenance allowlist 与其他 Library API 的 `503 LIBRARY_MAINTENANCE`.
+- blocking relations 返回完整 `creationId`, `generationId`, `relationType` list.
+- Purge 完成后 Generation Issue、References、detail 与 content endpoint 不暴露目标.
 
 ### Runtime Entry Point Tests
 
@@ -239,6 +278,10 @@ Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow
 - Prompt branch selection 与 diff labels.
 - Curation success/conflict/retry.
 - Recovery dry-run 与 state-specific actions.
+- Creation Detail 与 Image Detail Danger Zone 是唯一 Purge 入口, card 与 list 不提供快捷删除.
+- Plan impact、retained assets、Inbox warning、abandonment 二次确认与 exact phrase.
+- maintenance progress reload、Cutover 后 failure、success navigation 与 old deep link typed `404`.
+- 真实 loopback client abort 后 request lease 被释放, 后续 Purge 可以进入 maintenance; 未结束的 request 超过 drain deadline 时在 journal 创建前返回 typed failure.
 - external Draft edit conflict.
 - light/dark/system theme.
 - Desktop layout snapshots at `1024x768`, `1280x720`, `1366x768`, `1440x900` and `1920x1080`.
@@ -326,6 +369,7 @@ Coverage 作为遗漏信号, 不替代行为验证.
 - ADR number 唯一且递增.
 - fenced JSON 能解析.
 - shell command 不包含 unresolved destructive target.
+- Purge 文档中的 recursive cleanup 只描述 typed operation, 不提供手工 `rm`、glob 或 unresolved target command.
 - `CONTEXT.md` 格式与 duplicate term.
 
 `npm run fixtures:validate` 验证所有 versioned Library fixtures 与 Schema 预期一致.

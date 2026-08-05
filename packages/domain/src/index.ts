@@ -11,6 +11,60 @@ export type CommitOperation =
   "initialize_creation" | "checkpoint_revision" | "import_asset" | "generation" | "merge_library";
 export type CommitRecordKind = "creation" | "prompt" | "revision" | "generation" | "image_asset";
 
+export type PurgeTarget =
+  { kind: "creation"; creationId: string } | { kind: "image"; assetSha256: string };
+
+export interface PurgeRelation {
+  creationId: string;
+  generationId: string;
+  relationType: "output" | "reference";
+}
+
+export interface PurgeRecoveryEvidence {
+  transactionId: string;
+  location: "staging" | "quarantine";
+  state: string;
+  byteCount: number;
+}
+
+export interface PurgePlan {
+  schemaVersion: 1;
+  target: PurgeTarget;
+  libraryId: string;
+  snapshotDigest: string;
+  planDigest: string;
+  confirmationPhrase: string;
+  executable: boolean;
+  deletePaths: string[];
+  retainedAssetSha256: string[];
+  blockingRelations: PurgeRelation[];
+  recoveryEvidence: PurgeRecoveryEvidence[];
+  abandonedRecoveryTransactionIds: string[];
+  warnings: string[];
+  deleteByteCount: number;
+  fallbackCopyByteCount: number;
+}
+
+export type PurgeJournalPhase =
+  | "preparing_candidate"
+  | "candidate_ready"
+  | "original_retired"
+  | "replacement_active"
+  | "retired_removed"
+  | "index_ready";
+
+export interface PurgeJournal {
+  schemaVersion: 1;
+  operationId: string;
+  libraryRoot: string;
+  candidateRoot: string;
+  retiredRoot: string;
+  target: PurgeTarget;
+  planDigest: string;
+  phase: PurgeJournalPhase;
+  updatedAt: string;
+}
+
 export interface LibraryManifest {
   schemaVersion: 1;
   formatVersion: 1;
@@ -210,6 +264,15 @@ export type ArchiveErrorCode =
   | "LIBRARY_ALREADY_EXISTS"
   | "LIBRARY_CONFIG_INVALID"
   | "LIBRARY_NOT_FOUND"
+  | "PURGE_CLEANUP_FAILED"
+  | "PURGE_CONFIRMATION_MISMATCH"
+  | "PURGE_INSUFFICIENT_SPACE"
+  | "PURGE_MAINTENANCE_ACTIVE"
+  | "PURGE_PLAN_STALE"
+  | "PURGE_RECOVERY_BLOCKED"
+  | "PURGE_RECOVERY_REQUIRED"
+  | "PURGE_REFERENCE_BLOCKED"
+  | "PURGE_TARGET_NOT_FOUND"
   | "RECOVERY_NOT_ALLOWED"
   | "TRANSACTION_INVALID_STATE"
   | "TRANSACTION_NOT_FOUND";

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://text-to-image.local/schemas/purge/v1/plan.schema.json",
+  "title": "Purge Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "target",
+    "libraryId",
+    "snapshotDigest",
+    "planDigest",
+    "confirmationPhrase",
+    "executable",
+    "deletePaths",
+    "retainedAssetSha256",
+    "blockingRelations",
+    "recoveryEvidence",
+    "abandonedRecoveryTransactionIds",
+    "warnings",
+    "deleteByteCount",
+    "fallbackCopyByteCount"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "creationId"],
+          "properties": {
+            "kind": { "const": "creation" },
+            "creationId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "assetSha256"],
+          "properties": {
+            "kind": { "const": "image" },
+            "assetSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      ]
+    },
+    "libraryId": { "type": "string", "format": "uuid" },
+    "snapshotDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "planDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "confirmationPhrase": { "type": "string", "minLength": 1 },
+    "executable": { "type": "boolean" },
+    "deletePaths": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "retainedAssetSha256": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "blockingRelations": { "type": "array", "items": { "type": "object" } },
+    "recoveryEvidence": { "type": "array", "items": { "type": "object" } },
+    "abandonedRecoveryTransactionIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "deleteByteCount": { "type": "integer", "minimum": 0 },
+    "fallbackCopyByteCount": { "type": "integer", "minimum": 0 }
+  }
+}

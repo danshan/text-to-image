@@ -452,6 +452,39 @@ kbd {
   background: var(--surface-inverse);
   border-color: var(--surface-inverse);
 }
+
+.button--danger {
+  color: white;
+  background: var(--status-danger);
+  border-color: var(--status-danger);
+}
+
+.purge-danger-zone {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--status-danger) 45%, var(--border-default));
+  border-left: 3px solid var(--status-danger);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--status-danger) 6%, var(--surface-panel));
+}
+
+.purge-plan,
+.purge-danger-zone fieldset {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.purge-plan dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.purge-plan input[type="text"],
+.purge-plan label > input:not([type]) {
+  width: 100%;
+  margin-top: 0.4rem;
+}
 .button--primary:hover {
   background: var(--accent-primary);
   border-color: var(--accent-primary);

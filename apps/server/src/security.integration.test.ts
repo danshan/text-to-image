@@ -1,5 +1,6 @@
-import { initLibrary } from "@text-to-image/archive";
+import { createCreation, initLibrary } from "@text-to-image/archive";
 import { mkdtemp, rm } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,7 +12,11 @@ const apps: FastifyInstance[] = [];
 const runtimes: LibraryRuntime[] = [];
 const roots: string[] = [];
 
-async function appFixture(unavailable = false): Promise<{
+async function appFixture(
+  unavailable = false,
+  configure?: (app: FastifyInstance) => void,
+  drainTimeoutMs?: number,
+): Promise<{
   app: FastifyInstance;
   token: string;
   runtime: LibraryRuntime;
@@ -21,13 +26,18 @@ async function appFixture(unavailable = false): Promise<{
   roots.push(gitRoot);
   const libraryRoot = join(gitRoot, "library");
   if (!unavailable) initLibrary(libraryRoot);
-  const runtime = await LibraryRuntime.create({ gitRoot, libraryArgument: libraryRoot });
+  const runtime = await LibraryRuntime.create({
+    gitRoot,
+    libraryArgument: libraryRoot,
+    ...(drainTimeoutMs === undefined ? {} : { drainTimeoutMs }),
+  });
   runtimes.push(runtime);
   const created = await createApp({
     runtime,
     logLevel: "silent",
   });
   created.security.allowHost("127.0.0.1:4173");
+  configure?.(created.app);
   apps.push(created.app);
   const response = await created.app.inject({
     method: "GET",
@@ -204,5 +214,127 @@ describe("local service security", () => {
       headers: { host: "127.0.0.1:4173", "x-session-token": nextToken },
     });
     expect(current.statusCode).toBe(200);
+  });
+
+  it("prepares and executes Creation Purge through maintenance with token rotation", async () => {
+    const { app, token, gitRoot } = await appFixture();
+    const libraryRoot = join(gitRoot, "library");
+    const creation = createCreation(libraryRoot, { title: "Disposable" });
+    const prepared = await app.inject({
+      method: "POST",
+      url: `/api/v1/purge/creations/${creation.creation.id}/prepare`,
+      headers: { host: "127.0.0.1:4173", "x-session-token": token },
+      payload: {},
+    });
+    expect(prepared.statusCode).toBe(200);
+    const plan = prepared.json<{ data: { planDigest: string; confirmationPhrase: string } }>().data;
+
+    const executed = await app.inject({
+      method: "POST",
+      url: `/api/v1/purge/creations/${creation.creation.id}/execute`,
+      headers: { host: "127.0.0.1:4173", "x-session-token": token },
+      payload: {
+        planDigest: plan.planDigest,
+        confirmation: plan.confirmationPhrase,
+      },
+    });
+
+    expect(executed.statusCode).toBe(200);
+    const nextToken = executed.json<{ bootstrap: { sessionToken: string } }>().bootstrap
+      .sessionToken;
+    expect(nextToken).not.toBe(token);
+    const missing = await app.inject({
+      method: "GET",
+      url: `/api/v1/creations/${creation.creation.id}`,
+      headers: { host: "127.0.0.1:4173", "x-session-token": nextToken },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it("releases a Library request lease after the client aborts", async () => {
+    let markHandlerStarted: () => void = () => undefined;
+    const handlerStarted = new Promise<void>((resolveStarted) => {
+      markHandlerStarted = resolveStarted;
+    });
+    let finishHandler: () => void = () => undefined;
+    const handlerFinished = new Promise<void>((resolveFinished) => {
+      finishHandler = resolveFinished;
+    });
+    const { app, token, gitRoot } = await appFixture(
+      false,
+      (configuredApp) => {
+        configuredApp.get("/api/v1/test/hold", async () => {
+          markHandlerStarted();
+          await handlerFinished;
+          return { ok: true };
+        });
+      },
+      250,
+    );
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
+
+    const clientRequest = httpRequest({
+      host: "127.0.0.1",
+      port: address.port,
+      path: "/api/v1/test/hold",
+      headers: {
+        host: "127.0.0.1:4173",
+        "x-session-token": token,
+      },
+    });
+    clientRequest.on("error", () => undefined);
+    clientRequest.end();
+    await handlerStarted;
+    clientRequest.destroy();
+    finishHandler();
+
+    const libraryRoot = join(gitRoot, "library");
+    const creation = createCreation(libraryRoot, { title: "Abort cleanup" });
+    const prepared = await app.inject({
+      method: "POST",
+      url: `/api/v1/purge/creations/${creation.creation.id}/prepare`,
+      headers: { host: "127.0.0.1:4173", "x-session-token": token },
+      payload: {},
+    });
+    const plan = prepared.json<{ data: { planDigest: string; confirmationPhrase: string } }>().data;
+    const executed = await app.inject({
+      method: "POST",
+      url: `/api/v1/purge/creations/${creation.creation.id}/execute`,
+      headers: { host: "127.0.0.1:4173", "x-session-token": token },
+      payload: {
+        planDigest: plan.planDigest,
+        confirmation: plan.confirmationPhrase,
+      },
+    });
+
+    expect(executed.statusCode).toBe(200);
+  });
+
+  it("fails safely when active Library requests do not drain", async () => {
+    const { app, token, runtime, gitRoot } = await appFixture(false, undefined, 25);
+    const libraryRoot = join(gitRoot, "library");
+    const creation = createCreation(libraryRoot, { title: "Drain timeout" });
+    const prepared = await runtime.preparePurge({
+      kind: "creation",
+      creationId: creation.creation.id,
+    });
+    const lease = await runtime.acquire();
+    try {
+      const executed = await app.inject({
+        method: "POST",
+        url: `/api/v1/purge/creations/${creation.creation.id}/execute`,
+        headers: { host: "127.0.0.1:4173", "x-session-token": token },
+        payload: {
+          planDigest: prepared.planDigest,
+          confirmation: prepared.confirmationPhrase,
+        },
+      });
+      expect(executed.statusCode).toBe(503);
+      expect(executed.json()).toMatchObject({ code: "LIBRARY_DRAIN_TIMEOUT" });
+    } finally {
+      lease.release();
+    }
   });
 });

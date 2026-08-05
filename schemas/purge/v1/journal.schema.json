@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://text-to-image.local/schemas/purge/v1/journal.schema.json",
+  "title": "Ephemeral Purge Journal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "libraryRoot",
+    "candidateRoot",
+    "retiredRoot",
+    "target",
+    "planDigest",
+    "phase",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "operationId": { "type": "string", "format": "uuid" },
+    "libraryRoot": { "type": "string", "minLength": 1 },
+    "candidateRoot": { "type": "string", "minLength": 1 },
+    "retiredRoot": { "type": "string", "minLength": 1 },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "creationId"],
+          "properties": {
+            "kind": { "const": "creation" },
+            "creationId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "assetSha256"],
+          "properties": {
+            "kind": { "const": "image" },
+            "assetSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      ]
+    },
+    "planDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "phase": {
+      "enum": [
+        "preparing_candidate",
+        "candidate_ready",
+        "original_retired",
+        "replacement_active",
+        "retired_removed",
+        "index_ready"
+      ]
+    },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

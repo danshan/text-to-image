@@ -15,6 +15,8 @@ import {
   generationIssuesQuerySchema,
   generationParamsSchema,
   imageParamsSchema,
+  purgeExecuteSchema,
+  purgePrepareSchema,
   type BootstrapResponse,
   type CurationPatchRequest,
   type DraftPutRequest,
@@ -23,8 +25,11 @@ import {
   type LibraryTransition,
   type LibraryTransitionCommitResponse,
   type LibraryTransitionRequest,
+  type PurgeExecuteRequest,
+  type PurgePrepareRequest,
 } from "@text-to-image/api-contract";
-import type { GalleryQuery } from "@text-to-image/read-model";
+import { creationPurgeTarget, imagePurgeTarget } from "@text-to-image/archive";
+import type { GalleryQuery, IndexDegradationCode } from "@text-to-image/read-model";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { AppError, isErrorWithCode, NotFoundError } from "./shared/errors.js";
 import type { LibraryContext } from "./shared/library-runtime.js";
@@ -35,6 +40,19 @@ export interface AppOptions {
   runtime: LibraryRuntime;
   logLevel?: string;
   webRoot?: string;
+}
+
+function indexDiagnostic(code: IndexDegradationCode): string {
+  switch (code) {
+    case "INDEX_WRITER_BUSY":
+      return "The Gallery index is waiting for another index writer. Retry after it finishes.";
+    case "INDEX_COORDINATOR_FAILED":
+      return "The Gallery index coordinator is unavailable. Use Settings to rebuild the index.";
+    case "INDEX_PROJECTION_FAILED":
+      return "A committed Archive record could not be projected into the Gallery index.";
+    case "INDEX_REBUILD_FAILED":
+      return "The Gallery index could not be rebuilt from the Archive.";
+  }
 }
 
 function galleryQuery(value: Record<string, unknown>): GalleryQuery {
@@ -85,6 +103,17 @@ function galleryQuery(value: Record<string, unknown>): GalleryQuery {
 }
 
 function statusCodeForExternalError(code: string): number {
+  if (code === "PURGE_TARGET_NOT_FOUND") return 404;
+  if (code === "PURGE_CONFIRMATION_MISMATCH") return 422;
+  if (code === "PURGE_INSUFFICIENT_SPACE") return 507;
+  if (
+    code === "PURGE_PLAN_STALE" ||
+    code === "PURGE_REFERENCE_BLOCKED" ||
+    code === "PURGE_RECOVERY_BLOCKED" ||
+    code === "PURGE_MAINTENANCE_ACTIVE" ||
+    code === "PURGE_RECOVERY_REQUIRED"
+  )
+    return 409;
   if (code.includes("CONFLICT")) return 409;
   if (code.includes("NOT_FOUND")) return 404;
   if (code.includes("VALIDATION") || code.includes("INVALID")) return 422;
@@ -115,8 +144,31 @@ export async function createApp(
   const security = new SecurityContext(randomBytes(32).toString("base64url"));
   const requestContexts = new WeakMap<
     FastifyRequest,
-    { context: LibraryContext; release: () => void }
+    {
+      context: LibraryContext;
+      release: () => void;
+      handlerComplete: boolean;
+      responseClosed: boolean;
+    }
   >();
+  const releaseRequestContext = (request: FastifyRequest): void => {
+    const lease = requestContexts.get(request);
+    if (!lease) return;
+    lease.release();
+    requestContexts.delete(request);
+  };
+  const markHandlerComplete = (request: FastifyRequest): void => {
+    const lease = requestContexts.get(request);
+    if (!lease) return;
+    lease.handlerComplete = true;
+    if (lease.responseClosed) releaseRequestContext(request);
+  };
+  const markResponseClosed = (request: FastifyRequest): void => {
+    const lease = requestContexts.get(request);
+    if (!lease) return;
+    lease.responseClosed = true;
+    if (lease.handlerComplete) releaseRequestContext(request);
+  };
   const contextFor = (request: FastifyRequest): LibraryContext => {
     const lease = requestContexts.get(request);
     if (!lease) throw new Error("Library context was not acquired for the request");
@@ -159,18 +211,34 @@ export async function createApp(
       .send({ code: "INTERNAL_ERROR", message: "An unexpected error occurred.", correlationId });
   });
 
-  app.addHook("preHandler", async (request) => {
+  app.addHook("preHandler", async (request, reply) => {
     const pathname = request.url.split("?", 1)[0] ?? request.url;
     if (!pathname.startsWith("/api/v1/")) return;
     if (pathname === "/api/v1/bootstrap" || pathname === "/api/v1/health") return;
     if (pathname.startsWith("/api/v1/library/")) return;
-    requestContexts.set(request, await options.runtime.acquire());
+    if (pathname.startsWith("/api/v1/purge/")) return;
+    const lease = await options.runtime.acquire();
+    requestContexts.set(request, {
+      ...lease,
+      handlerComplete: false,
+      responseClosed: false,
+    });
+    reply.raw.once("close", () => markResponseClosed(request));
+  });
+  app.addHook("onSend", async (request, _reply, payload) => {
+    markHandlerComplete(request);
+    return payload;
+  });
+  app.addHook("onTimeout", (request, _reply, done) => {
+    markResponseClosed(request);
+    done();
+  });
+  app.addHook("onRequestAbort", (request, done) => {
+    markResponseClosed(request);
+    done();
   });
   app.addHook("onResponse", (request) => {
-    const lease = requestContexts.get(request);
-    if (!lease) return;
-    lease.release();
-    requestContexts.delete(request);
+    releaseRequestContext(request);
   });
 
   const health = async (): Promise<HealthResponse> => {
@@ -185,6 +253,8 @@ export async function createApp(
           latestArchiveMarker: null,
           lastIndexedMarker: null,
           lagCount: 0,
+          degraded: false,
+          code: null,
         },
         recoveryCount: 0,
         diagnostics: [`Asset Library is unavailable at ${state.libraryRoot}: ${state.reason}.`],
@@ -199,7 +269,7 @@ export async function createApp(
         ]);
         const status = archive.readOnly
           ? "read_only"
-          : diagnostics.length > 0
+          : diagnostics.length > 0 || index.degraded
             ? "degraded"
             : recovery.items.length > 0
               ? "recovery_required"
@@ -210,9 +280,19 @@ export async function createApp(
           status,
           apiVersion: API_VERSION,
           libraryFormatVersion: archive.formatVersion,
-          index,
+          index: {
+            available: index.available,
+            latestArchiveMarker: index.latestArchiveMarker,
+            lastIndexedMarker: index.lastIndexedMarker,
+            lagCount: index.lagCount,
+            degraded: index.degraded ?? false,
+            code: index.code ?? null,
+          },
           recoveryCount: recovery.items.length,
-          diagnostics,
+          diagnostics: [
+            ...diagnostics,
+            ...(index.degraded ? [indexDiagnostic(index.code ?? "INDEX_REBUILD_FAILED")] : []),
+          ],
         };
       });
     } catch (error) {
@@ -510,6 +590,71 @@ export async function createApp(
     await readModel.rebuild();
     return { data: await readModel.status() };
   });
+
+  app.post<{
+    Params: { creationId: string };
+    Body: PurgePrepareRequest;
+  }>(
+    "/api/v1/purge/creations/:creationId/prepare",
+    { schema: { params: creationParamsSchema, body: purgePrepareSchema } },
+    async (request) => ({
+      data: await options.runtime.preparePurge(
+        creationPurgeTarget(request.params.creationId),
+        request.body,
+      ),
+    }),
+  );
+  app.post<{
+    Params: { creationId: string };
+    Body: PurgeExecuteRequest;
+  }>(
+    "/api/v1/purge/creations/:creationId/execute",
+    { schema: { params: creationParamsSchema, body: purgeExecuteSchema } },
+    async (request) => {
+      const data = await options.runtime.executePurge(
+        creationPurgeTarget(request.params.creationId),
+        request.body,
+      );
+      security.rotateSessionToken();
+      return { data, bootstrap: await bootstrap() };
+    },
+  );
+  app.post<{ Params: { sha256: string }; Body: PurgePrepareRequest }>(
+    "/api/v1/purge/images/:sha256/prepare",
+    { schema: { params: imageParamsSchema, body: purgePrepareSchema } },
+    async (request) => ({
+      data: await options.runtime.preparePurge(
+        imagePurgeTarget(request.params.sha256),
+        request.body,
+      ),
+    }),
+  );
+  app.post<{ Params: { sha256: string }; Body: PurgeExecuteRequest }>(
+    "/api/v1/purge/images/:sha256/execute",
+    { schema: { params: imageParamsSchema, body: purgeExecuteSchema } },
+    async (request) => {
+      const data = await options.runtime.executePurge(
+        imagePurgeTarget(request.params.sha256),
+        request.body,
+      );
+      security.rotateSessionToken();
+      return { data, bootstrap: await bootstrap() };
+    },
+  );
+  app.get<{ Params: { operationId: string } }>(
+    "/api/v1/purge/operations/:operationId",
+    {
+      schema: {
+        params: {
+          type: "object",
+          additionalProperties: false,
+          required: ["operationId"],
+          properties: { operationId: { type: "string", pattern: "^[0-9a-f-]{36}$" } },
+        },
+      },
+    },
+    (request) => ({ data: options.runtime.purgeStatus(request.params.operationId) }),
+  );
 
   const webRoot = resolve(options.webRoot ?? join(process.cwd(), "apps", "web", "dist"));
   if (await pathExists(webRoot)) {

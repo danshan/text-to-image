@@ -9,6 +9,7 @@ import {
   rebuildReadModel,
 } from "./rebuild.js";
 import { IndexCoordinationError, type IndexWriterOptions } from "./index-writer-coordinator.js";
+import { readIndexDegradation } from "./index-degradation.js";
 import { READ_MODEL_VERSION } from "./schema.js";
 import type {
   GalleryQuery,
@@ -269,14 +270,17 @@ export class ReadModel {
 
   async status(): Promise<IndexStatus> {
     const latest = await latestMarkerId(this.#root);
+    const persistedDegradation = await readIndexDegradation(this.#root);
     if (!this.#database) {
+      const degradationCode = this.#degradedCode ?? persistedDegradation?.code ?? null;
+      const degradationError = this.#degradedError ?? persistedDegradation?.error ?? null;
       return {
         available: false,
         latestArchiveMarker: latest,
         lastIndexedMarker: null,
         lagCount: latest ? 1 : 0,
-        ...(this.#degradedError ? { degraded: true, error: this.#degradedError } : {}),
-        ...(this.#degradedCode ? { code: this.#degradedCode } : {}),
+        ...(degradationError ? { degraded: true, error: degradationError } : {}),
+        ...(degradationCode ? { code: degradationCode } : {}),
       };
     }
     const row = this.#db()
@@ -298,13 +302,16 @@ export class ReadModel {
       }
     }
     const lagCount = await markerLagCount(this.#root, indexed, indexedIds);
+    const activeDegradation = lagCount > 0 ? persistedDegradation : null;
+    const degradationCode = this.#degradedCode ?? activeDegradation?.code ?? null;
+    const degradationError = this.#degradedError ?? activeDegradation?.error ?? null;
     return {
       available: true,
       latestArchiveMarker: latest,
       lastIndexedMarker: indexed,
       lagCount,
-      ...(this.#degradedError ? { degraded: true, error: this.#degradedError } : {}),
-      ...(this.#degradedCode ? { code: this.#degradedCode } : {}),
+      ...(degradationError ? { degraded: true, error: degradationError } : {}),
+      ...(degradationCode ? { code: degradationCode } : {}),
     };
   }
 

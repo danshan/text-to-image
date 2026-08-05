@@ -125,6 +125,8 @@ describe("cross-process read model coordination", () => {
 
   it("returns typed busy degradation and releases the lock when its owner exits", async () => {
     const { libraryRoot } = await fixture();
+    const observer = new ReadModel(libraryRoot);
+    await observer.open();
     createCreation(libraryRoot, { title: "Pending" });
     const holder = worker("hold", libraryRoot);
     await holder.waitFor("ready");
@@ -139,6 +141,11 @@ describe("cross-process read model coordination", () => {
       code: "INDEX_WRITER_BUSY",
       lagCount: 1,
     });
+    expect(await observer.status()).toMatchObject({
+      degraded: true,
+      code: "INDEX_WRITER_BUSY",
+      lagCount: 1,
+    });
 
     holder.child.kill("SIGKILL");
     await holder.completed;
@@ -149,6 +156,11 @@ describe("cross-process read model coordination", () => {
         retryIntervalMs: 5,
       }),
     ).resolves.toBe("recovered");
+    observer.close();
+    await expect(catchUpReadModel(libraryRoot)).resolves.toMatchObject({
+      status: "ready",
+      lagCount: 0,
+    });
   });
 
   it("lets only the first lock holder rebuild a corrupt index", async () => {

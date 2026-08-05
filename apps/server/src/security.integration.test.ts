@@ -1,5 +1,5 @@
 import { createCreation, initLibrary } from "@text-to-image/archive";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -129,6 +129,35 @@ describe("local service security", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ items: [], page: { nextCursor: null, total: 0 } });
+  });
+
+  it("exposes a persisted index degradation without leaking internal paths", async () => {
+    const { app, token, gitRoot } = await appFixture();
+    const libraryRoot = join(gitRoot, "library");
+    createCreation(libraryRoot, { title: "Lagging index" });
+    await writeFile(
+      join(libraryRoot, ".cache", "index-degradation.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        code: "INDEX_WRITER_BUSY",
+        error: "Internal coordinator detail.",
+        recordedAt: "2026-08-06T00:00:00.000Z",
+      })}\n`,
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/health",
+      headers: { host: "127.0.0.1:4173", "x-session-token": token },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: "degraded",
+      index: { degraded: true, code: "INDEX_WRITER_BUSY", lagCount: 1 },
+      diagnostics: ["The Gallery index is waiting for another index writer. Retry after it finishes."],
+    });
+    expect(response.body).not.toContain("Internal coordinator detail");
+    expect(response.body).not.toContain(".cache");
   });
 
   it("allows the SPA shell to load before bootstrap provides a token", async () => {

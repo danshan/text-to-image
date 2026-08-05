@@ -425,12 +425,21 @@
   - `index-writer.sqlite` 使用 SQLite `BEGIN IMMEDIATE` 串行化跨进程 catch-up 与 rebuild, 8 秒有界等待并在 owner crash 时由 OS 自动释放.
   - Read Model 在获得 writer ownership 后重新打开当前 index 并 rescan Archive cursor; corruption recovery 只允许首个 holder rebuild.
   - CLI、Server health 与 Web Settings 使用稳定 degradation code, 不暴露内部 path 或 stack.
+  - 长生命周期 Read Model 只在实际 Marker lag 大于零时暴露 degradation; 其他 process 追平后, 旧实例不会保留 stale degraded health.
   - Phase 18 多进程 integration 覆盖四 writer serialization、busy timeout、owner crash release 与 single corruption rebuild.
   - Empty Library Schema 显式保存 `indexed_marker_ids = []`, 避免 reopen 把合法空 cursor 误判为不完整 replacement.
   - 保留并行 Phase 17 Purge working tree changes, 并完成 root cross-check.
+- 最终验证:
+  - `npm test`: 5 root files / 19 tests、31 Hook/Skill tests 与 26 Web tests passed.
+  - `npm run test:integration`: 9 files / 64 tests passed, 包含真实多进程 coordinator、owner crash、persisted degradation 与 loopback runtime coverage.
+  - `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run docs:check` 与 `git diff --check`: passed.
+  - release performance: full rebuild `10,841 ms`, warm Gallery query p95 `44.29 ms`; 12-run workflow pre-tool p95 `105.15 ms`, post-tool p95 `224.51 ms`, non-model p95 `329.66 ms`.
 - 错误:
   - 首次 root format check 报告 Server lifecycle 与 Read Model 两个文件未格式化; 对 exact files 执行 Prettier 后通过.
   - 首次完整 integration 有 13 个连锁失败, 根因是合法 Empty Library 没有 `indexed_marker_ids`; Schema 初始化显式空 cursor 并增加 reopen regression 后 9 files / 62 tests passed.
+  - 首次 `rebuild.ts` 大补丁与当前返回结构不匹配, 整体未应用; 拆分为 coordinator import、rebuild wrapper 与 catch-up result 小补丁.
+  - 首次 Phase 18 多进程测试有 3 个 fixture failure: pending Promise 未保持 holder process 存活、guard 在 lock release 后清理产生 false overlap、一个断言错误要求 optional field 等于 `undefined`; 使用真实 timer handle、pre-release cleanup 与正确断言后 3 tests passed.
+  - Focused integration 在默认 sandbox 内的既有 client-abort test 无法绑定 loopback listener; scoped outside-sandbox 同命令重跑后 4 files / 30 tests passed.
 
 ## Test Results
 
@@ -441,14 +450,14 @@
 | Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 57-module Web build passed                  | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
 | Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 5 root files / 19 tests, 31 Hook/Skill tests and 26 Web tests passed                           | pass   |
-| Integration                         | Archive、read model、HTTP security and daemon lifecycle pass                        | 9 files, 62 tests passed                                                                       | pass   |
+| Integration                         | Archive、read model、HTTP security and daemon lifecycle pass                        | 9 files, 64 tests passed                                                                       | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
 | Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
-| Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 12,326 ms                                                                                      | pass   |
-| Warm Gallery query                  | p95 <= 200 ms                                                                       | 51.92 ms across 100 queries                                                                    | pass   |
+| Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 10,841 ms                                                                                      | pass   |
+| Warm Gallery query                  | p95 <= 200 ms                                                                       | 44.29 ms across 100 queries                                                                    | pass   |
 | Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                                 | pass   |
 | External Library                    | Resolver、Generation、Commit、validate and index rebuild work outside repo          | Temporary external Library reached lagCount 0 and full validation passed                       | pass   |
-| Generation workflow                 | 12 deterministic runs satisfy the repository non-model budget                       | pre-tool p95 84.01 ms, post-tool p95 172.25 ms, non-model p95 256.26 ms                        | pass   |
+| Generation workflow                 | 12 deterministic runs satisfy the repository non-model budget                       | pre-tool p95 105.15 ms, post-tool p95 224.51 ms, non-model p95 329.66 ms                       | pass   |
 | Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 36 Markdown files and 13 ADRs passed                                                           | pass   |
 | Library selection and merge         | Config persistence、dry-run、atomic apply、conflict and recovery are correct        | Archive and read model integration coverage passed                                             | pass   |
 

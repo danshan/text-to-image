@@ -127,6 +127,8 @@
 - 独立 `.cache/index-writer.sqlite` 可以通过 SQLite transaction 提供 OS-managed cross-process lock. Owner crash 时 kernel 自动释放锁, 不需要不安全的 PID、mtime 或 stale lock deletion heuristics.
 - Node.js 24 `DatabaseSync` constructor 支持 busy `timeout`, `database.isTransaction` 可以确认 transaction state. 当前 runtime 的 busy error 为 `code=ERR_SQLITE_ERROR`, `errcode=5`, `errstr=database is locked`.
 - Coordinator 应使用短 SQLite timeout 加 async backoff, 避免在 Server process 内同步阻塞 event loop 达 8 秒. Production 总等待上限固定为 8 秒, tests 通过内部 option 缩短.
+- 只串行化 writers 仍不足以让 WAL main-file replacement 安全, 因为其他 process 可以继续持有旧 reader 与旧 WAL/SHM. Read model 改用 `DELETE` journal mode 后, rebuild replacement 只发布单个主文件, 旧 reader 继续使用旧 inode.
+- CLI 中的 degradation 不能直接被长期 Server process 观察. `.cache/index-degradation.json` 原子保存 stable code、bounded error 与 timestamp, successful catch-up/rebuild 清除; Server 只在 Marker 仍 lagging 时把它映射为 bounded health diagnostic.
 - Empty Library 没有 `last_indexed_marker`, 但仍必须持久化 `indexed_marker_ids = []`. Reopen validation 依赖显式空 cursor 区分合法空 index 与不完整 replacement.
 - 获锁后必须重新打开 index 并重新读取 Marker cursor. Lock contention、Archive corruption 与 rebuildable SQLite corruption 必须使用不同稳定 reason code, 且 contention 不能触发 rebuild.
 - 已提交 transaction 的 `.staging/` 目录不是 recovery evidence, Purge blocker 扫描必须用 Commit Marker 排除它们.

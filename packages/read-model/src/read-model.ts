@@ -303,8 +303,10 @@ export class ReadModel {
     }
     const lagCount = await markerLagCount(this.#root, indexed, indexedIds);
     const activeDegradation = lagCount > 0 ? persistedDegradation : null;
-    const degradationCode = this.#degradedCode ?? activeDegradation?.code ?? null;
-    const degradationError = this.#degradedError ?? activeDegradation?.error ?? null;
+    const degradationCode =
+      lagCount > 0 ? (this.#degradedCode ?? activeDegradation?.code ?? null) : null;
+    const degradationError =
+      lagCount > 0 ? (this.#degradedError ?? activeDegradation?.error ?? null) : null;
     return {
       available: true,
       latestArchiveMarker: latest,

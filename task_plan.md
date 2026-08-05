@@ -301,6 +301,8 @@ Phase 17
 4. Missing index, incompatible read-model Schema, and confirmed SQLite corruption may trigger rebuild; Archive validation failures remain fail closed.
 5. The CLI returns stable index degradation codes, Server health reports `degraded`, and Web diagnostics do not expose internal paths or raw stacks.
 6. Integration coverage uses real child processes and deterministic barriers, including owner crash release and a shortened test-only timeout.
+7. Replaceable read models use `DELETE` journal mode so atomic replacement never combines a new main file with an old WAL/SHM generation.
+8. Cross-process degradation state is a disposable `.cache/index-degradation.json`; successful catch-up or rebuild clears it, and Server health only exposes bounded diagnostics.
 
 ## Remaining Design Questions
 

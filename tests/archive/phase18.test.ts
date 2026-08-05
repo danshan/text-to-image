@@ -125,7 +125,9 @@ describe("cross-process read model coordination", () => {
 
   it("returns typed busy degradation and releases the lock when its owner exits", async () => {
     const { libraryRoot } = await fixture();
-    const observer = new ReadModel(libraryRoot);
+    const observer = new ReadModel(libraryRoot, {
+      writer: { timeoutMs: 50, sqliteTimeoutMs: 5, retryIntervalMs: 5 },
+    });
     await observer.open();
     createCreation(libraryRoot, { title: "Pending" });
     const holder = worker("hold", libraryRoot);
@@ -133,9 +135,7 @@ describe("cross-process read model coordination", () => {
     holder.child.send("start");
     await holder.waitFor("held");
 
-    const degraded = await catchUpReadModel(libraryRoot, undefined, {
-      writer: { timeoutMs: 50, sqliteTimeoutMs: 5, retryIntervalMs: 5 },
-    });
+    const degraded = await observer.catchUp();
     expect(degraded).toMatchObject({
       status: "degraded",
       code: "INDEX_WRITER_BUSY",
@@ -156,11 +156,15 @@ describe("cross-process read model coordination", () => {
         retryIntervalMs: 5,
       }),
     ).resolves.toBe("recovered");
-    observer.close();
     await expect(catchUpReadModel(libraryRoot)).resolves.toMatchObject({
       status: "ready",
       lagCount: 0,
     });
+    const recoveredStatus = await observer.status();
+    expect(recoveredStatus).toMatchObject({ available: true, lagCount: 0 });
+    expect(recoveredStatus.code).toBeUndefined();
+    expect(recoveredStatus.degraded).toBeUndefined();
+    observer.close();
   });
 
   it("lets only the first lock holder rebuild a corrupt index", async () => {

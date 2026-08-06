@@ -42,7 +42,7 @@ export interface PreparePurgeOptions {
 
 export interface ExecutePurgeRequest extends PreparePurgeOptions {
   planDigest: string;
-  confirmation: string;
+  confirmed: boolean;
 }
 
 export interface ExecutePurgeResult {
@@ -163,10 +163,6 @@ export function preparePurge(
     target,
     libraryId: manifest.libraryId,
     snapshotDigest,
-    confirmationPhrase:
-      target.kind === "creation"
-        ? `PURGE CREATION ${target.creationId}`
-        : `PURGE IMAGE ${target.assetSha256}`,
     executable: blockingRelations.length === 0 && blockingRecovery.length === 0,
     deletePaths: sortedDeletePaths,
     retainedAssetSha256: [...retainedAssets].sort(),
@@ -201,11 +197,10 @@ export function executePurge(
         ? { abandonRecoveryTransactionIds: request.abandonRecoveryTransactionIds }
         : {}),
     });
-    if (request.confirmation !== plan.confirmationPhrase) {
+    if (request.confirmed !== true) {
       throw new ArchiveError(
-        "PURGE_CONFIRMATION_MISMATCH",
-        "Purge confirmation phrase does not match the prepared plan.",
-        { expected: plan.confirmationPhrase },
+        "PURGE_CONFIRMATION_REQUIRED",
+        "Purge requires explicit confirmation after reviewing the prepared plan.",
       );
     }
     if (request.planDigest !== plan.planDigest) {

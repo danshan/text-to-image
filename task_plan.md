@@ -259,6 +259,8 @@ Phase 17
 - [x] 实现单目标 Purge Plan、verified replacement、maintenance transition 与关键 crash-window roll-forward.
 - [x] 实现 Archive、CLI、API 与 Web Detail Danger Zone 的 Creation 和 Image Asset Purge vertical slice.
 - [x] 修复 aborted request lease 泄漏, 并为 maintenance drain 增加 30 秒 fail-safe deadline.
+- [x] 修正 References 为只展示存续 Generation usage, 保留已失去关系的 Library 级 Image Asset.
+- [x] 以常规最终确认对话框、CLI `--confirm` 和 API `confirmed: true` 取代 target identity 手动输入.
 - [ ] 补充 unit、integration、fault injection、Web 与文档测试.
 - [ ] 执行 browser E2E 与最终 acceptance verification, 更新执行记录并恢复正式文档为 `accepted`.
 - **Status:** in_progress
@@ -271,7 +273,7 @@ Phase 17
 4. Purge 完成后不保留目标 tombstone、audit record 或 read-model/cache 残留; 后续 Library Merge 可以显式重新引入相同内容.
 5. Purge 使用独占 Library Maintenance 和 verified replacement; cutover 前失败保持原 Library, cutover 后只能 roll forward.
 6. recovery evidence 默认阻塞 Purge; 用户可以在 dry-run 列出 exact transaction 后二次确认 Recovery Evidence Abandonment.
-7. Purge 强制使用 snapshot-bound `prepare -> execute`, `planDigest`、精确确认短语和 stale-plan rejection.
+7. Purge 强制使用 snapshot-bound `prepare -> execute`, `planDigest`、显式最终确认和 stale-plan rejection, 不要求用户手动输入 target identity.
 8. 第一版只支持单目标. Web 入口仅位于 Creation Detail 与 Image Detail 的 Danger Zone, CLI 与 Web 共用 shared writer contract.
 
 #### Implementation Order
@@ -279,8 +281,8 @@ Phase 17
 1. Contract first: 增加独立 Purge Plan / journal Schema、domain types、typed errors 与 maintenance state contract; 完成态 Library 保持 format `1`.
 2. Archive protocol: 构建 candidate replacement、重写 surviving Commit Marker、full validation、cutover journal、retired-root cleanup 与 startup roll-forward.
 3. Runtime and adapters: 排空 Library requests, 阻断 Generation, 持久化 maintenance progress, rebuild read model 并只在 index ready 后恢复服务.
-4. CLI and API: 实现单目标 prepare/execute/status, exact confirmation、stale-plan detection、blocking references 与 Recovery Evidence Abandonment.
-5. Web UI: 在 Creation Detail 与 Image Detail 增加 Danger Zone、impact review、typed confirmation、maintenance progress 与完成后导航.
+4. CLI and API: 实现单目标 prepare/execute/status, boolean confirmation、stale-plan detection、blocking references 与 Recovery Evidence Abandonment.
+5. Web UI: 在 Creation Detail 与 Image Detail 增加 Danger Zone、impact review、常规最终确认对话框、maintenance progress 与完成后导航.
 6. Verification: 覆盖引用图、并发、磁盘空间、权限、failpoints、restart roll-forward、无残留检查、Merge reintroduction 与 desktop E2E.
 
 ### Phase 18: Cross-process Read Model Coordination

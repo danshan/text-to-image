@@ -85,7 +85,7 @@ _Avoid_: Library Unavailable, downtime, background cleanup
 _Avoid_: Cancel, quarantine, automatic cleanup
 
 **Purge Plan**:
-Purge 执行前根据一个确定 Library snapshot 生成的单目标只读删除计划. 它只包含一个 Creation Purge 或一个 Image Asset Purge, 完整列出目标、删除与保留范围、阻塞关系、Recovery Evidence Abandonment 和资源需求; 执行必须提交匹配的 plan digest 与精确确认短语, snapshot 变化后原计划失效.
+Purge 执行前根据一个确定 Library snapshot 生成的单目标只读删除计划. 它只包含一个 Creation Purge 或一个 Image Asset Purge, 完整列出目标、删除与保留范围、阻塞关系、Recovery Evidence Abandonment 和资源需求; 执行必须提交匹配的 plan digest 与显式最终确认, snapshot 变化后原计划失效.
 _Avoid_: Confirmation dialog, delete request, dry-run output
 
 **Purge Cutover**:

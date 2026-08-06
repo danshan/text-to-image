@@ -317,7 +317,10 @@ export class ReadModel {
     };
   }
 
-  listGallery(query: GalleryQuery = {}): {
+  listGallery(
+    query: GalleryQuery = {},
+    options: { referencedOnly?: boolean } = {},
+  ): {
     items: IndexedImage[];
     total: number;
     nextCursor: string | null;
@@ -361,6 +364,12 @@ export class ReadModel {
         WHERE reference.asset_sha256 = a.sha256 AND reference.roles_json LIKE ?
       )`);
       parameters.push(`%"${query.role}"%`);
+    }
+    if (options.referencedOnly) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM generation_references reference
+        WHERE reference.asset_sha256 = a.sha256
+      )`);
     }
     if (query.tool) {
       conditions.push("g.tool_name = ?");
@@ -439,19 +448,14 @@ export class ReadModel {
     total: number;
     nextCursor: string | null;
   } {
-    const result = this.listGallery({
-      ...query,
-      source: "all",
-      hidden: query.hidden ?? "include",
-      limit: 100,
-    });
-    const referenced = result.items.filter((item) => {
-      const row = this.#db()
-        .prepare("SELECT 1 FROM generation_references WHERE asset_sha256 = ? LIMIT 1")
-        .get(item.sha256);
-      return item.imported || row !== undefined;
-    });
-    return { items: referenced, total: referenced.length, nextCursor: null };
+    return this.listGallery(
+      {
+        ...query,
+        source: "all",
+        hidden: query.hidden ?? "include",
+      },
+      { referencedOnly: true },
+    );
   }
 
   listCreations(status?: "active" | "shelved"): IndexedCreation[] {

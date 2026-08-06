@@ -33,7 +33,6 @@ export interface PurgePlan {
   libraryId: string;
   snapshotDigest: string;
   planDigest: string;
-  confirmationPhrase: string;
   executable: boolean;
   deletePaths: string[];
   retainedAssetSha256: string[];
@@ -265,7 +264,7 @@ export type ArchiveErrorCode =
   | "LIBRARY_CONFIG_INVALID"
   | "LIBRARY_NOT_FOUND"
   | "PURGE_CLEANUP_FAILED"
-  | "PURGE_CONFIRMATION_MISMATCH"
+  | "PURGE_CONFIRMATION_REQUIRED"
   | "PURGE_INSUFFICIENT_SPACE"
   | "PURGE_MAINTENANCE_ACTIVE"
   | "PURGE_PLAN_STALE"

@@ -132,3 +132,38 @@ test("compares prompt revisions and previews recovery without mutation", async (
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "cancel" })).toHaveCount(0);
 });
+
+test("reviews Purge impact without requiring typed target identity", async ({ page }) => {
+  await page.goto("/creations/f69e912d-c504-4278-89d5-4558ba452df0");
+
+  const review = page.getByRole("button", { name: "Review Purge impact" });
+  await review.click();
+  const dialog = page.getByRole("dialog", { name: /Permanently delete this Creation/u });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Permanently delete" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(review).toBeFocused();
+});
+
+test("aligns Image Asset Purge impact labels and values", async ({ page }) => {
+  await page.goto("/gallery");
+  await page
+    .getByRole("link")
+    .filter({ has: page.getByAltText("Generated image from Minimal Fixture") })
+    .click();
+
+  await page.getByRole("button", { name: "Review Purge impact" }).click();
+  const dialog = page.getByRole("dialog", { name: /Permanently delete this Image Asset/u });
+  await expect(dialog).toBeVisible();
+  const bytesRow = dialog.getByText("Bytes", { exact: true }).locator("..");
+  const labelBox = await bytesRow.locator("dt").boundingBox();
+  const valueBox = await bytesRow.locator("dd").boundingBox();
+
+  expect(labelBox).not.toBeNull();
+  expect(valueBox).not.toBeNull();
+  if (!labelBox || !valueBox) throw new Error("Expected Purge impact metrics to be visible.");
+  expect(Math.abs(labelBox.x - valueBox.x)).toBeLessThan(1);
+});

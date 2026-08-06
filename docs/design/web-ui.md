@@ -2,7 +2,7 @@
 title: Web UI Design
 status: draft
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 related:
   - ../../CONTEXT.md
   - ../product/requirements.md
@@ -42,7 +42,7 @@ Web UI 是单用户、本地、client-rendered 的 Asset Library read-and-curate
 | Route                             | Purpose                                                 |
 | --------------------------------- | ------------------------------------------------------- |
 | `/gallery`                        | 默认图片网格、search、filter 与 sort                    |
-| `/references`                     | 外部导入与曾作为 Reference Image 的资产                 |
+| `/references`                     | 存在存续 Generation Reference usage 的 Image Asset      |
 | `/creations`                      | Creation 列表与 `active \| shelved` 过滤                |
 | `/creations/:creationId`          | Prompt branch、Generation timeline 与 Creation Curation |
 | `/images/:sha256`                 | Image Asset provenance、引用与 Image Curation           |
@@ -223,7 +223,7 @@ Prompt History 与 Generation Timeline 是同一 provenance 的两个视图, 但
 
 页面可以准备 Reference Image selection 与 roles, 但只生成一份可复制的 Codex invocation instruction, 不从 browser 调用 Codex.
 
-页面底部提供 `Danger Zone`. Creation Purge 是这里唯一的删除入口, 不出现在 Creation list 或其他快捷菜单. 点击后先请求只读 Purge Plan, 展示将删除的 Draft、Revision、Generation、Curation、Generation Issue、Reference relation 与 recovery evidence, 同时明确列出所有保留的 Image Asset. Execute 前必须输入 `PURGE CREATION <creationId>`.
+页面底部提供 `Danger Zone`. Creation Purge 是这里唯一的删除入口, 不出现在 Creation list 或其他快捷菜单. 点击后先请求只读 Purge Plan, 再在最终确认对话框展示目标、将删除的 Draft、Revision、Generation、Curation、Generation Issue、Reference relation 与 recovery evidence, 同时明确列出所有保留的 Image Asset. 用户使用 `Cancel` 或 `Permanently delete` 完成常规二次确认, 不手动输入 Creation ID.
 
 ## Image Asset Detail
 
@@ -245,7 +245,7 @@ GET /api/v1/images/:sha256/content?variant=original
 
 服务端从 index/Archive 解析 canonical path, 不接受 query filesystem path.
 
-Detail 底部提供 Image Asset `Danger Zone`, 这是 Image Asset Purge 的唯一 Web 入口. Prepare 展示全部 blocking Output / Reference relation、Image Curation、thumbnail、payload bytes、Inbox exact-content warning 与 recovery evidence. 任一存续关系存在时禁用 Execute 并提供对应 Creation 与 Generation links; 不提供 cascade override. Execute 前必须输入 `PURGE IMAGE <assetSha256>`.
+Detail 底部提供 Image Asset `Danger Zone`, 这是 Image Asset Purge 的唯一 Web 入口. 最终确认对话框展示目标、全部 blocking Output / Reference relation、Image Curation、thumbnail、payload bytes、Inbox exact-content warning 与 recovery evidence. 任一存续关系存在时禁用 Execute 并提供对应 Creation 与 Generation links; 不提供 cascade override. 用户使用 `Cancel` 或 `Permanently delete` 完成常规二次确认, 不手动输入 Image Asset SHA-256.
 
 ## Generation Detail
 
@@ -361,7 +361,7 @@ Mutation routes 调用 shared packages, 不复制 archive logic. Web API 不暴�
 
 `GET /api/v1/images/:sha256` 的每条 used-as-reference relation 返回 `generationId`、`creationId`、`promptRevisionId`、`roles` 与 `guidance`; `promptRevisionId` 从 Generation read model 派生, 不写回 Archive.
 
-Purge prepare response 是 snapshot-bound plan, execute request 必须原样提交 `planDigest`、exact confirmation 与 abandonment transaction IDs. Server 在 execute 时重算权威 plan; 不匹配返回 `409 PURGE_PLAN_STALE`. Maintenance 期间除 bootstrap、health、Purge operation status 与必要 diagnostics 外, Library API 返回 `503 LIBRARY_MAINTENANCE`.
+Purge prepare response 是 snapshot-bound plan, execute request 必须提交 `planDigest`、`confirmed: true` 与 exact abandonment transaction IDs. Server 在 execute 时重算权威 plan; 不匹配返回 `409 PURGE_PLAN_STALE`. Maintenance 期间除 bootstrap、health、Purge operation status 与必要 diagnostics 外, Library API 返回 `503 LIBRARY_MAINTENANCE`.
 
 ## Local Service Security
 
@@ -469,6 +469,6 @@ Library Maintenance 时 bootstrap 返回 `status: "maintenance"`、operation ID�
 - Component 与 end-to-end tests 覆盖 Generation Issues latest-per-active-Creation derivation、Safety Rejection wording、Review Prompt navigation 和后续 succeeded Generation 消退.
 - Security tests 覆盖 Host、Origin、token、CORS、CSP、path traversal 和 arbitrary file access.
 - Component 与 integration tests 覆盖 absolute Library path、single transition、progress、Library Unavailable navigation、atomic switch 和 stale token rejection.
-- Component、API integration 与 E2E 覆盖两个 Detail Danger Zone、Purge Plan impact、reference blocker、typed confirmation、stale plan、abandonment、maintenance progress、完成导航和旧 deep link `404`.
+- Component、API integration 与 E2E 覆盖两个 Detail Danger Zone、Purge Plan impact、reference blocker、boolean final confirmation、stale plan、abandonment、maintenance progress、完成导航和旧 deep link `404`.
 - Performance tests 使用 accepted synthetic dataset 与 warm/cold cache cases.
 - Visual regression 覆盖 light、dark、loading、empty、error 和 degraded states.

@@ -115,7 +115,7 @@
 - Cutover 前可以清理 candidate 并保持 original Library; Cutover 后不得 rollback 到包含目标的 retired root, restart recovery 只能 roll forward.
 - `inbox/` 是用户直接管理的输入区, 不具备受控资产所有权. Image Asset Purge 可以报告 exact-content match, 但不能自动删除 Inbox 或外部 source.
 - staging 与 quarantine 默认保留 recovery evidence. Purge 只有在 dry-run 列出 exact transaction 且用户二次确认 Recovery Evidence Abandonment 后才能清除; live owner 不能绕过.
-- Purge Plan 使用单目标、whole-snapshot digest、exact confirmation 与 execute-time recheck, 避免 TOCTOU 和无上下文批量误删.
+- Purge Plan 使用单目标、whole-snapshot digest、显式 boolean confirmation 与 execute-time recheck, 避免 TOCTOU 和无上下文批量误删. 手动输入 Creation UUID 或 Image Asset SHA-256 不提供额外完整性保证, 因而由常规最终确认对话框和 CLI `--confirm` 取代.
 - 完成态 Library 继续符合 format `1`; Purge Plan 与 durable journal 使用独立临时 Schema, 不增加永久 Archive record kind 或 Commit Marker operation.
 - Fastify `onResponse` 只覆盖 response 已发送的终止路径. Client abort 或 socket timeout 可能绕过该 hook; Library request lease 必须同时跟踪 handler completion 与 response closure, 并在两者都成立后幂等释放.
 - Purge drain 不能无限等待 active request. 30 秒 deadline 在 journal 创建前返回 `LIBRARY_DRAIN_TIMEOUT`, 因而不会触碰 active Library, 同时避免 Web 永久停留在 maintenance 提示.

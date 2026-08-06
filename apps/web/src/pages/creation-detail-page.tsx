@@ -442,7 +442,7 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
               <CopyIcon /> Copy instruction
             </button>
           </section>
-          <PurgeDangerZone api={api} kind="creation" id={creation.id} />
+          <PurgeDangerZone api={api} kind="creation" id={creation.id} label={creation.title} />
         </aside>
       </div>
     </div>

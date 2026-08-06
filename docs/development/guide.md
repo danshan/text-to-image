@@ -2,7 +2,7 @@
 title: Development Guide
 status: draft
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -176,11 +176,11 @@ npm run assetctl -- purge creation prepare --creation <creation-id> --library ./
 npm run assetctl -- purge image prepare --asset <sha256> --library ./library --format json
 ```
 
-Purge execute 必须使用 prepare 返回的 exact `planDigest` 与 confirmation, 不提供 `--force`、`--yes` 或跳过 dry-run 的 alias:
+Purge execute 必须使用 prepare 返回的 exact `planDigest` 并显式提供 `--confirm`, 不提供 `--force`、`--yes` 或跳过 prepare 的 alias. `--confirm` 表示用户已经检查 Purge Plan, 不要求手动输入 UUID 或 SHA-256:
 
 ```bash
-npm run assetctl -- purge creation execute --creation <creation-id> --library ./library --plan-digest <sha256> --confirmation "PURGE CREATION <creation-id>" --format json
-npm run assetctl -- purge image execute --asset <sha256> --library ./library --plan-digest <sha256> --confirmation "PURGE IMAGE <sha256>" --format json
+npm run assetctl -- purge creation execute --creation <creation-id> --library ./library --plan-digest <sha256> --confirm --format json
+npm run assetctl -- purge image execute --asset <sha256> --library ./library --plan-digest <sha256> --confirm --format json
 npm run assetctl -- purge status --operation <operation-id> --library ./library --format json
 ```
 

@@ -2,7 +2,7 @@
 title: Product Requirements
 status: draft
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 related:
   - ../../CONTEXT.md
   - ../design/asset-library.md
@@ -101,7 +101,7 @@ related:
 
 ### UC-013: Purge a Creation
 
-用户从 Creation Detail 的 Danger Zone 准备单目标 Purge Plan, 检查将删除的身份、Draft、Curation、Prompt Revision、Generation、关系与 recovery evidence. 用户提交 snapshot-bound plan digest 和精确确认短语后, 系统在独占 Library Maintenance 中物理清除 Creation, 但保留全部 Image Asset.
+用户从 Creation Detail 的 Danger Zone 准备单目标 Purge Plan, 检查将删除的身份、Draft、Curation、Prompt Revision、Generation、关系与 recovery evidence. 用户在最终确认对话框明确确认后提交 snapshot-bound plan digest, 系统在独占 Library Maintenance 中物理清除 Creation, 但保留全部 Image Asset. 用户不需要手动输入 Creation ID.
 
 ### UC-014: Purge an Image Asset
 
@@ -134,7 +134,7 @@ related:
 - `FR-LIB-021`: CLI 必须提供无写入的 Image source inspection, 返回 canonical source path、content identity、media type、尺寸与 byte length, 并区分 source missing、unreadable、unsupported 与 invalid.
 - `FR-LIB-022`: Creation Purge 必须物理清除一个 Creation 的身份、Draft、Curation、全部 Prompt Revision、Generation 与关系, 且不得级联删除 Image Asset.
 - `FR-LIB-023`: Image Asset Purge 必须在存在任一存续 Output 或 Reference 关系时 fail closed 并返回全部 blocking `creationId`、`generationId` 与 relation type.
-- `FR-LIB-024`: Purge 必须强制使用单目标、snapshot-bound `prepare -> execute`, exact `planDigest` 与确认短语; snapshot 变化时不得执行.
+- `FR-LIB-024`: Purge 必须强制使用单目标、snapshot-bound `prepare -> execute`, exact `planDigest` 与显式 boolean confirmation; snapshot 变化时不得执行, 且不得要求用户手动输入 target identity.
 - `FR-LIB-025`: Purge 必须排空请求并进入独占 `LIBRARY_MAINTENANCE`, 使用经 full validation 的 sibling replacement Library, 不得原地把 active Archive 修改为半删除状态.
 - `FR-LIB-026`: Purge Cutover 前失败必须保持原 Library; Cutover 后不得 rollback 到包含目标的 retired root, 必须从 durable journal roll forward.
 - `FR-LIB-027`: Purge 只有在 retired root、journal、read model 与 cache 残留均已清除, replacement full validation 通过且 index ready 后才能完成.
@@ -198,7 +198,7 @@ related:
 - `FR-UI-015`: Reference Image 只按 Generation usage 关联 Prompt Revision; Focused Revision 按 Generation 分组展示实际 Reference Image、roles 与 guidance.
 - `FR-UI-016`: Generation 与 Image Asset 详情提供返回精确 Creation、Prompt Revision 与 Generation 上下文的 links, 不新增独立 Prompt Revision 页面.
 - `FR-UI-017`: Creation Purge 与 Image Asset Purge 入口只能位于各自 Detail 页面的 Danger Zone, list 与 card 不提供快捷删除.
-- `FR-UI-018`: UI 必须展示 Purge Plan、阻塞关系、保留资产、Inbox warning、recovery evidence、临时空间和 exact confirmation, 执行后进入不可关闭的 maintenance progress 页面.
+- `FR-UI-018`: UI 必须在最终确认对话框展示 Purge Plan、目标、阻塞关系、保留资产、Inbox warning、recovery evidence 与临时空间, 并提供 `Cancel` 和 `Permanently delete`; 不得要求手动输入 UUID、SHA-256 或确认短语. 执行后进入不可关闭的 maintenance progress 页面.
 - `FR-UI-019`: Creation Purge 完成后导航到 `/creations`, Image Asset Purge 完成后导航到 `/gallery`; 旧 deep link 返回 typed not-found, 不显示目标摘要.
 - `FR-UI-020`: References 只展示存续 Generation usage. Creation Purge 删除对应 Generation 后, Reference Image 关系与 Generation Issue 随 index 同步消失.
 
@@ -256,6 +256,6 @@ related:
 - Creation Purge 在跨 Creation reuse 场景保留全部 Image Asset, 删除所有 Creation-owned record、Curation、Generation Issue 与 Reference relation, full residual scan 不发现目标 identity 或 owned content.
 - Image Asset Purge 在任一 Output 或 Reference blocker 存在时无写入失败; blocker 消失后删除 payload、Curation、thumbnail 与 index row, 但保留 Inbox exact-content match.
 - Purge failpoint 覆盖 candidate build、full validation、两个 cutover rename、retired cleanup、index rebuild 和 restart. Cutover 前恢复原 Library, Cutover 后只 roll forward.
-- Web UI 和 API integration 覆盖 Detail Danger Zone、plan review、typed confirmation、stale plan、Recovery Evidence Abandonment、maintenance progress、success navigation 与旧 deep link `404`.
+- Web UI 和 API integration 覆盖 Detail Danger Zone、plan review、boolean final confirmation、stale plan、Recovery Evidence Abandonment、maintenance progress、success navigation 与旧 deep link `404`.
 - Library Merge 可以在 dry-run 和显式确认后重新引入已 Purge identity 或 content, 不把它标记为恢复.
 - README、AGENTS、Schema、fixtures、设计、开发、测试和恢复文档完整且链接有效.

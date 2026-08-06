@@ -10,7 +10,6 @@
     "libraryId",
     "snapshotDigest",
     "planDigest",
-    "confirmationPhrase",
     "executable",
     "deletePaths",
     "retainedAssetSha256",
@@ -48,7 +47,6 @@
     "libraryId": { "type": "string", "format": "uuid" },
     "snapshotDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "planDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "confirmationPhrase": { "type": "string", "minLength": 1 },
     "executable": { "type": "boolean" },
     "deletePaths": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
     "retainedAssetSha256": {

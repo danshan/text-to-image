@@ -2,7 +2,7 @@
 title: User Guide
 status: draft
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 related:
   - ../product/requirements.md
   - ../design/generation-workflow.md
@@ -322,7 +322,7 @@ Replay 表示用相同的历史输入再执行一次, 但仍会创建新的 Gene
 
 实现完成后, 进入 Creation Detail 页面底部的 `Danger Zone`, 选择 `Prepare Creation Purge`. 页面会列出将删除的 Draft、Prompt Revision、Generation、Curation、Generation Issue、Reference relation 与 recovery evidence, 并单独列出仍会保留的 Image Asset.
 
-Creation Purge 不等同于 `shelved`. 它不可恢复, 但不会自动删除任何生成图片或参考图片. 检查计划后, 输入页面要求的完整 `PURGE CREATION <creationId>` 短语才能执行. Purge 完成后页面进入 `/creations`, 旧链接返回 Not found.
+Creation Purge 不等同于 `shelved`. 它不可恢复, 但不会自动删除任何生成图片或参考图片. 检查最终确认对话框中的目标、删除范围和保留资产后, 选择 `Permanently delete` 才会执行; 无需手动输入 Creation ID. Purge 完成后页面进入 `/creations`, 旧链接返回 Not found.
 
 ### 7.5 永久删除 Image Asset
 
@@ -331,6 +331,8 @@ Image Asset Purge 入口位于 Image Detail 页面底部的 `Danger Zone`, 不�
 如果图片仍是任一存续 Generation 的 Output 或 Reference, 页面会列出阻塞的 Creation 与 Generation, 且不能强制绕过. 需要先 Purge 对应 Creation, 再重新准备 Image Asset Purge. 删除 A、B 两张有关联的图片时, 先移除引用 A 的 B Generation 所属 Creation, 再移除产生 A 的存续 Creation, 最后分别 Purge A 与 B Image Asset.
 
 Image Asset Purge 删除 managed payload、Image Curation 与 thumbnail, 但不会删除 `inbox/` 中内容相同的文件或 Library 外部原文件. 页面会提示 exact-content Inbox match, 由用户另行决定是否处理.
+
+检查最终确认对话框后选择 `Permanently delete` 才会执行 Image Asset Purge; 无需手动输入 SHA-256. 系统仍使用 Image Asset identity 与 snapshot-bound plan digest 验证目标和 Library snapshot.
 
 ### 7.6 Purge 被 recovery evidence 阻塞
 

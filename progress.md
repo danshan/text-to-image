@@ -441,6 +441,38 @@
   - 首次 Phase 18 多进程测试有 3 个 fixture failure: pending Promise 未保持 holder process 存活、guard 在 lock release 后清理产生 false overlap、一个断言错误要求 optional field 等于 `undefined`; 使用真实 timer handle、pre-release cleanup 与正确断言后 3 tests passed.
   - Focused integration 在默认 sandbox 内的既有 client-abort test 无法绑定 loopback listener; scoped outside-sandbox 同命令重跑后 4 files / 30 tests passed.
 
+### Phase 17 Follow-up: Reference Lifecycle and Purge Confirmation
+
+- 已确认:
+  - `/references` 只展示至少存在一个存续 Generation Reference usage 的 Image Asset. Creation Purge 删除最后一个 usage 后, Image Asset 继续保留在 Library, 但不再出现在 References 页面.
+  - Purge 保留 snapshot-bound `prepare -> execute`、`planDigest`、execute-time recheck 与 stale-plan rejection, 但不再要求手动输入 Creation UUID、Image Asset SHA-256 或确认短语.
+  - Web 使用包含目标与完整 impact 的最终确认对话框; CLI 使用 `--confirm`; HTTP API 使用 `confirmed: true`.
+  - Recovery Evidence Abandonment 继续逐项选择 exact transaction, selection 变化立即使旧 Plan 失效, 并与 Purge 共用最终确认.
+  - Domain 与 API 继续使用 `Purge`; 用户 action 使用 `Permanently delete`.
+- 已实现:
+  - Read Model 在 SQL query 中使用 `generation_references` existence filter, 因而 items、total 与 cursor 共享存续 usage 语义; 单纯 imported 的 orphan Image Asset 不再进入 References.
+  - Purge Plan Schema、domain、Archive、CLI、API contract、Server 与 Web 已移除 `confirmationPhrase`, 新增 `PURGE_CONFIRMATION_REQUIRED` 和 boolean confirmation.
+  - Web 最终确认对话框支持 focus trap、Escape / Cancel、opener focus restoration、blocking relation、retained asset 与逐项 Recovery Evidence review.
+  - Purge impact 的 `dt` / `dd` 取消 browser 默认 margin, `Bytes` 与数值按同一左边界对齐.
+  - 同步更新 glossary、产品需求、Purge / Web 设计、用户手册、开发指南、测试策略、任务计划与研究记录; verified replacement ADR 不变, 未新增 ADR.
+- 验证:
+  - focused Web: 1 file / 3 tests passed.
+  - focused Archive / CLI / Read Model: 2 files / 18 tests passed.
+  - focused Server security / maintenance: 1 file / 11 tests passed outside sandbox.
+  - `npm test`: 5 root files / 19 tests、31 Hook / Skill tests 与 12 Web files / 27 tests passed.
+  - `npm run test:integration`: 9 files / 66 tests passed outside sandbox.
+  - `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check` 与 `npm run docs:check`: passed.
+  - `npm run fixtures:validate`: 2 of 2 fixtures matched outside sandbox.
+  - `npm run test:e2e`: Chromium 与 WebKit 共 17 passed, 1 intentional WebKit mutation skip; Creation baselines 已检查并同步 Phase 17 Danger Zone, 两个浏览器均验证 Image Asset Purge `Bytes` label/value 左边界对齐.
+- 错误:
+  - 首次使用不存在的 `npm run test:unit`; 改用 root `npm test` 和 repository integration config.
+  - 默认 Vitest config 排除 Archive integration 与 Web workspace tests; 改用 integration config 和 Web workspace test command.
+  - Server integration 与 fixture validation 在 sandbox 内分别被 loopback 和 `tsx` IPC policy 拒绝; scoped outside-sandbox rerun passed.
+  - API schema 初次使用 `const: true`, false request 在 Fastify validation 层返回 generic code; 改为 required boolean 并由 Archive 返回 stable `PURGE_CONFIRMATION_REQUIRED`.
+  - 首次 browser E2E 发现 async prepare 期间 opener 被 disabled 后 focus restoration 丢失; 保存 opener ref 并在 dialog close 后显式恢复 focus.
+  - Creation visual baseline 尚未包含既有 Phase 17 Danger Zone; 检查 Chromium / WebKit diff 后更新两个预期基线并完成 full rerun.
+  - 一次 exact-file Prettier command 误包含两个 PNG baseline, source files 已正常格式化但 Prettier 对 binary 返回无 parser; 移除 binary target 后 `npm run format:check` passed.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |

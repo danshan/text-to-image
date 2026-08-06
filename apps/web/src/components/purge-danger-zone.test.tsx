@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { PurgePlan } from "../types";
@@ -8,7 +8,7 @@ import { PurgeDangerZone } from "./purge-danger-zone";
 const creationId = "11111111-1111-4111-8111-111111111111";
 
 describe("PurgeDangerZone", () => {
-  it("requires a prepared executable Plan and exact typed confirmation", async () => {
+  it("reviews a prepared executable Plan in a final confirmation dialog", async () => {
     const user = userEvent.setup();
     const plan: PurgePlan = {
       schemaVersion: 1,
@@ -16,7 +16,6 @@ describe("PurgeDangerZone", () => {
       libraryId: "22222222-2222-4222-8222-222222222222",
       snapshotDigest: "a".repeat(64),
       planDigest: "b".repeat(64),
-      confirmationPhrase: `PURGE CREATION ${creationId}`,
       executable: true,
       deletePaths: [`creations/${creationId}`],
       retainedAssetSha256: [],
@@ -34,11 +33,10 @@ describe("PurgeDangerZone", () => {
     } as unknown as ApiClient;
     render(<PurgeDangerZone api={api} kind="creation" id={creationId} />);
 
-    await user.click(screen.getByRole("button", { name: "Review Purge impact" }));
-    const execute = screen.getByRole("button", { name: "Purge permanently" });
-    expect(execute).toHaveProperty("disabled", true);
-
-    await user.type(screen.getByRole("textbox"), plan.confirmationPhrase);
+    const review = screen.getByRole("button", { name: "Review Purge impact" });
+    await user.click(review);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    const execute = screen.getByRole("button", { name: "Permanently delete" });
     expect(execute).toHaveProperty("disabled", false);
     await user.click(execute);
 
@@ -48,7 +46,6 @@ describe("PurgeDangerZone", () => {
 
   it("keeps execution disabled when surviving relations block the Plan", async () => {
     const user = userEvent.setup();
-    const phrase = `PURGE IMAGE ${"a".repeat(64)}`;
     const api = {
       preparePurge: vi.fn().mockResolvedValue({
         schemaVersion: 1,
@@ -56,7 +53,6 @@ describe("PurgeDangerZone", () => {
         libraryId: "22222222-2222-4222-8222-222222222222",
         snapshotDigest: "b".repeat(64),
         planDigest: "c".repeat(64),
-        confirmationPhrase: phrase,
         executable: false,
         deletePaths: [],
         retainedAssetSha256: [],
@@ -77,13 +73,67 @@ describe("PurgeDangerZone", () => {
     } as unknown as ApiClient;
     render(<PurgeDangerZone api={api} kind="image" id={"a".repeat(64)} />);
 
-    await user.click(screen.getByRole("button", { name: "Review Purge impact" }));
-    await user.type(screen.getByRole("textbox"), phrase);
+    const review = screen.getByRole("button", { name: "Review Purge impact" });
+    await user.click(review);
 
-    expect(screen.getByRole("button", { name: "Purge permanently" })).toHaveProperty(
+    expect(screen.getByRole("button", { name: "Permanently delete" })).toHaveProperty(
       "disabled",
       true,
     );
     expect(screen.getByText(/reference by Generation/u)).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(review));
+  });
+
+  it("combines exact recovery evidence selection with the final Purge confirmation", async () => {
+    const user = userEvent.setup();
+    const transactionId = "44444444-4444-4444-8444-444444444444";
+    const basePlan: PurgePlan = {
+      schemaVersion: 1,
+      target: { kind: "creation", creationId },
+      libraryId: "22222222-2222-4222-8222-222222222222",
+      snapshotDigest: "a".repeat(64),
+      planDigest: "b".repeat(64),
+      executable: false,
+      deletePaths: [`creations/${creationId}`],
+      retainedAssetSha256: [],
+      blockingRelations: [],
+      recoveryEvidence: [
+        {
+          transactionId,
+          location: "quarantine",
+          state: "malformed",
+          byteCount: 9,
+        },
+      ],
+      abandonedRecoveryTransactionIds: [],
+      warnings: [],
+      deleteByteCount: 42,
+      fallbackCopyByteCount: 100,
+    };
+    const approvedPlan: PurgePlan = {
+      ...basePlan,
+      planDigest: "c".repeat(64),
+      executable: true,
+      abandonedRecoveryTransactionIds: [transactionId],
+    };
+    const executePurge = vi.fn().mockResolvedValue(undefined);
+    const preparePurge = vi
+      .fn()
+      .mockResolvedValueOnce(basePlan)
+      .mockResolvedValueOnce(approvedPlan);
+    const api = { preparePurge, executePurge } as unknown as ApiClient;
+    render(<PurgeDangerZone api={api} kind="creation" id={creationId} />);
+
+    await user.click(screen.getByRole("button", { name: "Review Purge impact" }));
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(
+      screen.getByRole("button", { name: "Rebuild Plan with selected abandonment" }),
+    );
+
+    expect(preparePurge).toHaveBeenLastCalledWith("creation", creationId, [transactionId]);
+    expect(screen.getByText(/also abandons 1 selected recovery transaction/u)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Permanently delete" }));
+    expect(executePurge).toHaveBeenCalledWith("creation", creationId, approvedPlan);
   });
 });

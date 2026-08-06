@@ -479,11 +479,51 @@ kbd {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
 }
+.purge-plan dl > div {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+}
+.purge-plan dt,
+.purge-plan dd {
+  margin: 0;
+}
 
 .purge-plan input[type="text"],
 .purge-plan label > input:not([type]) {
   width: 100%;
   margin-top: 0.4rem;
+}
+.confirmation-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 52%);
+}
+.purge-confirmation {
+  display: grid;
+  width: min(620px, 100%);
+  max-height: calc(100vh - 48px);
+  gap: 13px;
+  padding: 24px;
+  overflow: auto;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--status-danger);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 32%);
+}
+.purge-confirmation > h3,
+.purge-confirmation > p {
+  margin: 0;
+}
+.purge-confirmation > code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 11px;
 }
 .button--primary:hover {
   background: var(--accent-primary);

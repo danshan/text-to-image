@@ -104,7 +104,7 @@ function galleryQuery(value: Record<string, unknown>): GalleryQuery {
 
 function statusCodeForExternalError(code: string): number {
   if (code === "PURGE_TARGET_NOT_FOUND") return 404;
-  if (code === "PURGE_CONFIRMATION_MISMATCH") return 422;
+  if (code === "PURGE_CONFIRMATION_REQUIRED") return 422;
   if (code === "PURGE_INSUFFICIENT_SPACE") return 507;
   if (
     code === "PURGE_PLAN_STALE" ||

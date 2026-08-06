@@ -227,7 +227,6 @@ export interface PurgePlan {
   libraryId: string;
   snapshotDigest: string;
   planDigest: string;
-  confirmationPhrase: string;
   executable: boolean;
   deletePaths: string[];
   retainedAssetSha256: string[];
@@ -254,7 +253,7 @@ export interface PurgePrepareRequest {
 
 export interface PurgeExecuteRequest extends PurgePrepareRequest {
   planDigest: string;
-  confirmation: string;
+  confirmed: boolean;
 }
 
 export interface PurgeExecuteResponse {

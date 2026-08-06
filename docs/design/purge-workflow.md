@@ -2,7 +2,7 @@
 title: Purge Workflow Design
 status: draft
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 related:
   - ../../CONTEXT.md
   - ../product/requirements.md
@@ -28,7 +28,7 @@ Purge 不等同于 `shelved`、hidden、Recovery cancel、quarantine、cache reb
 
 1. 第一版一个 Purge Plan 只包含一个 Creation 或一个 Image Asset.
 2. Purge 强制执行只读 `prepare` 和 destructive `execute` 两阶段, 不提供跳过 prepare 的入口.
-3. `execute` 必须提交匹配当前 snapshot 的 `planDigest`、精确确认短语和全部 Recovery Evidence Abandonment transaction IDs.
+3. `execute` 必须提交匹配当前 snapshot 的 `planDigest`、`confirmed: true` 和全部 Recovery Evidence Abandonment transaction IDs.
 4. Snapshot 或请求范围变化时返回 `PURGE_PLAN_STALE`, 不执行删除.
 5. Creation Purge 不删除任何 Image Asset payload 或 Image Curation.
 6. Image Asset 存在任一存续 Output 或 Reference 关系时返回 `PURGE_REFERENCE_BLOCKED`.
@@ -49,10 +49,10 @@ Purge 不等同于 `shelved`、hidden、Recovery cancel、quarantine、cache reb
 
 Purge Target 是以下 tagged union 之一:
 
-| Kind       | Identity       | Confirmation                  |
-| ---------- | -------------- | ----------------------------- |
-| `creation` | lowercase UUID | `PURGE CREATION <creationId>` |
-| `image`    | SHA-256 hex    | `PURGE IMAGE <assetSha256>`   |
+| Kind       | Identity       |
+| ---------- | -------------- |
+| `creation` | lowercase UUID |
+| `image`    | SHA-256 hex    |
 
 Target identity 必须通过 typed parser, 不得直接拼接 filesystem path.
 
@@ -69,7 +69,7 @@ Purge Plan 是只读、未持久化的 snapshot-bound response, 至少包含:
 - 用户选定的 Recovery Evidence Abandonment transaction IDs.
 - 内容相同但不会自动删除的 Inbox file warnings.
 - hard-link capability、fallback copy bytes、最低临时空间估算.
-- exact confirmation phrase 与 `planDigest`.
+- `planDigest`. 用户最终确认不属于 plan canonical bytes, 由 execute request 的 `confirmed: true` 单独表达.
 
 `planDigest` 对 canonical plan bytes 使用 SHA-256. Canonical bytes 不包含展示顺序不稳定的字段; 所有 path、relation 与 transaction list 使用 deterministic sort. `execute` 在进入 maintenance 和获取锁后重新计算同一计划, 比较 digest 后才能创建 destructive journal.
 
@@ -115,7 +115,7 @@ Journal phases 至少区分:
 4. 把同一 Marker 中的 Image Asset record 列为 retained records.
 5. 扫描 staging 与 quarantine, 返回 blockers 或确认的 abandonment scope.
 6. 计算 cache、临时空间、candidate 与 retired root plan.
-7. 返回 deterministic Purge Plan 和 exact confirmation phrase, 不写 filesystem.
+7. 返回 deterministic Purge Plan, 不写 filesystem.
 
 ### Prepare Image Asset Purge
 
@@ -128,7 +128,7 @@ Journal phases 至少区分:
 
 ### Execute
 
-1. 验证 target、`planDigest`、confirmation phrase 与 abandonment IDs.
+1. 验证 target、`planDigest`、`confirmed: true` 与 abandonment IDs.
 2. Runtime 进入 Library Maintenance, 阻断新 data request, 排空现有 request 并停止新的 Generation preflight. Request lease 必须在 response completion、client abort 与 socket timeout 路径幂等释放; drain 超过 30 秒时在创建 journal 前安全失败, 不得无限保持 maintenance.
 3. 获取全局 Archive lock, 再次 full validate 和重算 Purge Plan. 不匹配时释放状态并返回 `PURGE_PLAN_STALE`.
 4. 创建并 fsync sibling journal 与 candidate root.
@@ -170,9 +170,9 @@ Root CLI contract:
 
 ```bash
 npm run assetctl -- purge creation prepare --creation <creation-id> --library <library-root> --format json
-npm run assetctl -- purge creation execute --creation <creation-id> --library <library-root> --plan-digest <sha256> --confirmation "PURGE CREATION <creation-id>" --format json
+npm run assetctl -- purge creation execute --creation <creation-id> --library <library-root> --plan-digest <sha256> --confirm --format json
 npm run assetctl -- purge image prepare --asset <sha256> --library <library-root> --format json
-npm run assetctl -- purge image execute --asset <sha256> --library <library-root> --plan-digest <sha256> --confirmation "PURGE IMAGE <sha256>" --format json
+npm run assetctl -- purge image execute --asset <sha256> --library <library-root> --plan-digest <sha256> --confirm --format json
 npm run assetctl -- purge status --operation <operation-id> --library <library-root> --format json
 ```
 
@@ -193,7 +193,7 @@ HTTP API 使用 typed target-specific prepare / execute endpoint 与 operation s
 | Final validation     | 不适用                          | 保持 maintenance diagnostics, 不 rollback                |
 | Process crash        | 启动时删除 candidate 与 journal | 启动时按 phase roll forward                              |
 
-Purge error 使用 stable code, 至少包括 `PURGE_PLAN_STALE`, `PURGE_REFERENCE_BLOCKED`, `PURGE_RECOVERY_BLOCKED`, `PURGE_CONFIRMATION_MISMATCH`, `PURGE_INSUFFICIENT_SPACE`, `PURGE_MAINTENANCE_ACTIVE`, `PURGE_RECOVERY_REQUIRED` 与 `PURGE_CLEANUP_FAILED`.
+Purge error 使用 stable code, 至少包括 `PURGE_PLAN_STALE`, `PURGE_REFERENCE_BLOCKED`, `PURGE_RECOVERY_BLOCKED`, `PURGE_CONFIRMATION_REQUIRED`, `PURGE_INSUFFICIENT_SPACE`, `PURGE_MAINTENANCE_ACTIVE`, `PURGE_RECOVERY_REQUIRED` 与 `PURGE_CLEANUP_FAILED`.
 
 ## Security
 
@@ -212,7 +212,7 @@ Purge 完成后的 Library 继续满足 format `1`; 不增加永久 record kind�
 
 ## Validation
 
-- Schema tests 覆盖 Purge Plan、journal phase、confirmation 和 typed error details.
+- Schema tests 覆盖 Purge Plan、journal phase、boolean confirmation 和 typed error details.
 - Archive integration 覆盖 Creation-owned graph removal、Image Asset retention、unreferenced asset removal 与 Marker rewrite.
 - Reference tests 覆盖 Output、Reference、跨 Creation reuse、A 作为 B reference 后的顺序删除.
 - Recovery tests 覆盖 staging、quarantine、malformed metadata、live owner 与 exact abandonment IDs.
@@ -220,6 +220,6 @@ Purge 完成后的 Library 继续满足 format `1`; 不增加永久 record kind�
 - Restart tests 证明 cutover 前 rollback cleanup 与 cutover 后 roll-forward.
 - Security tests 覆盖 sibling path containment、symlink、hard-link fallback、locked file、permission 和无更强重试.
 - Read-model tests 证明 Generation Issue、References、detail、search、FTS 与 thumbnails 无残留.
-- API、Web 与 E2E 覆盖 Danger Zone、plan review、typed confirmation、stale plan、maintenance progress、success navigation 和 old deep link `404`.
+- API、Web 与 E2E 覆盖 Danger Zone、plan review、boolean final confirmation、stale plan、maintenance progress、success navigation 和 old deep link `404`.
 - Full residual scan 证明 active root、retired root、journal、cache 与 logs 不包含 target identity 或受管理目标内容.
 - Merge integration 证明其他 source Library 可以显式重新引入已 Purge identity 或 content.

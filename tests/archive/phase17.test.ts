@@ -56,10 +56,9 @@ describe("Purge verified replacement", () => {
     const plan = preparePurge(libraryRoot, target);
 
     expect(plan.executable).toBe(true);
-    expect(plan.confirmationPhrase).toBe(`PURGE CREATION ${creation.creation.id}`);
     executePurge(libraryRoot, target, {
       planDigest: plan.planDigest,
-      confirmation: plan.confirmationPhrase,
+      confirmed: true,
     });
 
     expect(existsSync(join(libraryRoot, "creations", creation.creation.id))).toBe(false);
@@ -96,7 +95,7 @@ describe("Purge verified replacement", () => {
     expect(plan.warnings).toHaveLength(1);
     executePurge(libraryRoot, target, {
       planDigest: plan.planDigest,
-      confirmation: plan.confirmationPhrase,
+      confirmed: true,
     });
 
     expect(readFileSync(inboxCopy)).toEqual(PNG_1X1);
@@ -119,9 +118,25 @@ describe("Purge verified replacement", () => {
     expect(() =>
       executePurge(libraryRoot, target, {
         planDigest: plan.planDigest,
-        confirmation: plan.confirmationPhrase,
+        confirmed: true,
       }),
     ).toThrowError(expect.objectContaining({ code: "PURGE_PLAN_STALE" }));
+    expect(existsSync(join(libraryRoot, "creations", creation.creation.id))).toBe(true);
+  });
+
+  it("requires explicit confirmation after preparing the Plan", () => {
+    const owner = makeOwner();
+    const libraryRoot = initLibrary(join(owner, "library")).libraryRoot;
+    const creation = createCreation(libraryRoot, { title: "Unconfirmed" });
+    const target = creationPurgeTarget(creation.creation.id);
+    const plan = preparePurge(libraryRoot, target);
+
+    expect(() =>
+      executePurge(libraryRoot, target, {
+        planDigest: plan.planDigest,
+        confirmed: false,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "PURGE_CONFIRMATION_REQUIRED" }));
     expect(existsSync(join(libraryRoot, "creations", creation.creation.id))).toBe(true);
   });
 
@@ -171,7 +186,23 @@ describe("Purge verified replacement", () => {
       "--format",
       "json",
     ]);
-    const plan = prepared.value as { planDigest: string; confirmationPhrase: string };
+    const plan = prepared.value as { planDigest: string };
+
+    await expect(
+      runAssetctl([
+        "purge",
+        "creation",
+        "execute",
+        "--creation",
+        creation.creation.id,
+        "--library",
+        libraryRoot,
+        "--plan-digest",
+        plan.planDigest,
+        "--format",
+        "json",
+      ]),
+    ).rejects.toMatchObject({ code: "PURGE_CONFIRMATION_REQUIRED" });
 
     const executed = await runAssetctl([
       "purge",
@@ -183,8 +214,7 @@ describe("Purge verified replacement", () => {
       libraryRoot,
       "--plan-digest",
       plan.planDigest,
-      "--confirmation",
-      plan.confirmationPhrase,
+      "--confirm",
       "--format",
       "json",
     ]);

@@ -258,7 +258,19 @@ describe("local service security", () => {
       payload: {},
     });
     expect(prepared.statusCode).toBe(200);
-    const plan = prepared.json<{ data: { planDigest: string; confirmationPhrase: string } }>().data;
+    const plan = prepared.json<{ data: { planDigest: string } }>().data;
+
+    const unconfirmed = await app.inject({
+      method: "POST",
+      url: `/api/v1/purge/creations/${creation.creation.id}/execute`,
+      headers: { host: "127.0.0.1:4173", "x-session-token": token },
+      payload: {
+        planDigest: plan.planDigest,
+        confirmed: false,
+      },
+    });
+    expect(unconfirmed.statusCode).toBe(422);
+    expect(unconfirmed.json()).toMatchObject({ code: "PURGE_CONFIRMATION_REQUIRED" });
 
     const executed = await app.inject({
       method: "POST",
@@ -266,7 +278,7 @@ describe("local service security", () => {
       headers: { host: "127.0.0.1:4173", "x-session-token": token },
       payload: {
         planDigest: plan.planDigest,
-        confirmation: plan.confirmationPhrase,
+        confirmed: true,
       },
     });
 
@@ -329,14 +341,14 @@ describe("local service security", () => {
       headers: { host: "127.0.0.1:4173", "x-session-token": token },
       payload: {},
     });
-    const plan = prepared.json<{ data: { planDigest: string; confirmationPhrase: string } }>().data;
+    const plan = prepared.json<{ data: { planDigest: string } }>().data;
     const executed = await app.inject({
       method: "POST",
       url: `/api/v1/purge/creations/${creation.creation.id}/execute`,
       headers: { host: "127.0.0.1:4173", "x-session-token": token },
       payload: {
         planDigest: plan.planDigest,
-        confirmation: plan.confirmationPhrase,
+        confirmed: true,
       },
     });
 
@@ -359,7 +371,7 @@ describe("local service security", () => {
         headers: { host: "127.0.0.1:4173", "x-session-token": token },
         payload: {
           planDigest: prepared.planDigest,
-          confirmation: prepared.confirmationPhrase,
+          confirmed: true,
         },
       });
       expect(executed.statusCode).toBe(503);

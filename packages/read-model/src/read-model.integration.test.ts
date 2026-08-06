@@ -258,6 +258,37 @@ describe("ReadModel", () => {
     model.close();
   });
 
+  it("lists only Image Assets with surviving Reference usages", async () => {
+    const { root, assetSha256 } = await fixture();
+    const importedBytes = Buffer.from("89504e470d0a1a0a0000000d4948445201", "hex");
+    const importedSha256 = digest(importedBytes);
+    const importedRecord = await writeObject(
+      root,
+      `assets/sha256/${importedSha256.slice(0, 2)}/${importedSha256}.png`,
+      importedBytes,
+    );
+    const importedMarkerId = "c6f8e901-1234-4456-a789-bc2d3e4f5061";
+    await writeFile(
+      join(root, "archive", "commits", `${importedMarkerId}.json`),
+      json({
+        schemaVersion: 1,
+        id: importedMarkerId,
+        operation: "import_asset",
+        createdAt: "2026-08-02T12:07:00.000Z",
+        records: [importedRecord],
+      }),
+    );
+
+    const model = new ReadModel(root);
+    await model.open();
+
+    expect(model.listGallery({ source: "all" }).items.map((item) => item.sha256)).toContain(
+      importedSha256,
+    );
+    expect(model.listReferences().items.map((item) => item.sha256)).toEqual([assetSha256]);
+    model.close();
+  });
+
   it("derives one latest issue per active Creation and clears it after recovery", async () => {
     const { root } = await fixture();
     const failed = json({

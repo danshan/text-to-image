@@ -490,7 +490,7 @@ export async function run(argv: string[]): Promise<CliResult> {
     if (action === "execute") {
       const result = executePurge(resolved.libraryRoot, target, {
         planDigest: stringOption(parsed, "plan-digest"),
-        confirmation: stringOption(parsed, "confirmation"),
+        confirmed: parsed.options.has("confirm"),
         abandonRecoveryTransactionIds,
       });
       const readModel = new ReadModel(resolved.libraryRoot);

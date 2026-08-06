@@ -211,7 +211,7 @@ export class ApiClient {
         method: "POST",
         body: JSON.stringify({
           planDigest: plan.planDigest,
-          confirmation: plan.confirmationPhrase,
+          confirmed: true,
           abandonRecoveryTransactionIds: plan.abandonedRecoveryTransactionIds,
         }),
       },

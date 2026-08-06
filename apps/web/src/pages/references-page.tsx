@@ -12,7 +12,7 @@ export function ReferencesPage({ api, search }: { api: ApiClient; search: string
       <header className="page-heading">
         <span className="eyebrow">Archive / visual inputs</span>
         <h1>References</h1>
-        <p>Imported images and assets reused as generation references.</p>
+        <p>Image Assets used by surviving Generations as visual references.</p>
       </header>
       {resource.status === "loading" && !resource.data && <PageSkeleton />}
       {resource.status === "error" && (
@@ -24,7 +24,7 @@ export function ReferencesPage({ api, search }: { api: ApiClient; search: string
       {resource.data?.items.length === 0 && (
         <EmptyState
           title="No reference images yet"
-          description="Import an image into the Library inbox, then attach it to a generation with explicit roles."
+          description="Attach an Image Asset to a Generation with explicit roles to create a Reference usage."
         />
       )}
     </div>

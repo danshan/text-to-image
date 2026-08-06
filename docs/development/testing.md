@@ -2,7 +2,7 @@
 title: Testing Strategy
 status: draft
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -56,7 +56,7 @@ related:
 - config precedence 和 Git-root-relative resolution.
 - error code mapping.
 - Image source canonicalization、inspection metadata 与 missing、unreadable、unsupported、invalid error mapping.
-- deterministic Purge Plan canonicalization、digest、confirmation phrase 与 stale snapshot comparison.
+- deterministic Purge Plan canonicalization、digest、boolean confirmation 与 stale snapshot comparison.
 - Purge journal phase transition、Cutover boundary 与 restart recovery decision table.
 - Image Asset Output / Reference blocker enumeration 与 single-target validation.
 
@@ -247,7 +247,7 @@ Fastify injection 或 local server 覆盖:
 - concrete interface、`0.0.0.0` 与 `::` bind contract.
 - wildcard interface URL discovery、scoped IPv6 exclusion 与 IP literal Host/Origin allowlist.
 - development listener 暴露 Vite, Fastify proxy target 保持 loopback.
-- Purge prepare / execute / status Schema、session security、exact confirmation 与 `PURGE_PLAN_STALE`.
+- Purge prepare / execute / status Schema、session security、required `confirmed: true` 与 `PURGE_PLAN_STALE`.
 - maintenance allowlist 与其他 Library API 的 `503 LIBRARY_MAINTENANCE`.
 - blocking relations 返回完整 `creationId`, `generationId`, `relationType` list.
 - Purge 完成后 Generation Issue、References、detail 与 content endpoint 不暴露目标.
@@ -283,7 +283,7 @@ Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow
 - Curation success/conflict/retry.
 - Recovery dry-run 与 state-specific actions.
 - Creation Detail 与 Image Detail Danger Zone 是唯一 Purge 入口, card 与 list 不提供快捷删除.
-- Plan impact、retained assets、Inbox warning、abandonment 二次确认与 exact phrase.
+- Plan impact、retained assets、Inbox warning、逐项 abandonment 授权与常规最终确认对话框.
 - maintenance progress reload、Cutover 后 failure、success navigation 与 old deep link typed `404`.
 - 真实 loopback client abort 后 request lease 被释放, 后续 Purge 可以进入 maintenance; 未结束的 request 超过 drain deadline 时在 journal 创建前返回 typed failure.
 - external Draft edit conflict.

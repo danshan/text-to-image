@@ -53,10 +53,10 @@ export const purgePrepareSchema = {
 export const purgeExecuteSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["planDigest", "confirmation"],
+  required: ["planDigest", "confirmed"],
   properties: {
     planDigest: { type: "string", pattern: sha256 },
-    confirmation: { type: "string", minLength: 1, maxLength: 200 },
+    confirmed: { type: "boolean" },
     abandonRecoveryTransactionIds: {
       type: "array",
       uniqueItems: true,

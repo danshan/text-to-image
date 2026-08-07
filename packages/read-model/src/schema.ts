@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const READ_MODEL_VERSION = 1;
+export const READ_MODEL_VERSION = 2;
 
 export function createSchema(database: DatabaseSync): void {
   database.exec(`
@@ -35,6 +35,8 @@ export function createSchema(database: DatabaseSync): void {
       creation_id TEXT NOT NULL,
       prompt_revision_id TEXT NOT NULL,
       replay_of_generation_id TEXT,
+      platform_id TEXT CHECK (platform_id IS NULL OR platform_id = 'openai'),
+      platform_source TEXT NOT NULL CHECK (platform_source IN ('recorded', 'legacy_inferred', 'unknown')),
       status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed', 'interrupted')),
       outcome_known INTEGER NOT NULL CHECK (outcome_known IN (0, 1)),
       tool_name TEXT NOT NULL,

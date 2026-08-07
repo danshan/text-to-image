@@ -1,8 +1,8 @@
 ---
 title: Asset Library Design
-status: draft
+status: accepted
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-07
 related:
   - ../../CONTEXT.md
   - ../adr/0001-use-the-filesystem-as-the-source-of-truth.md
@@ -226,6 +226,7 @@ Generation commit 不替换 Draft 正文. 当 prepare 期间的 Draft hash 仍�
   "creationId": "f69e912d-c504-4278-89d5-4558ba452df0",
   "promptRevisionId": "1567f72f-7a13-45cd-acd3-84a0090547e1",
   "replayOfGenerationId": null,
+  "platform": "openai",
   "status": "succeeded",
   "outcomeKnown": true,
   "references": [
@@ -254,6 +255,8 @@ Generation commit 不替换 Draft 正文. 当 prepare 期间的 Draft hash 仍�
   "error": null
 }
 ```
+
+`platform` 是 Generation Platform machine ID, 当前 Writer 只支持 `openai`. 它与 Tool、Model 和 Parameters 分开保存. format `1` 为兼容历史 Archive 允许该字段缺失, 但所有新 Generation Writer 都必须写入受支持值.
 
 `roles` 非空、去重, 值限制为 `subject`, `style`, `composition`, `palette`, `other`. 仅使用 `other` 时 `guidance` 必填. `model` 和未知 parameters 必须保留 `null` 或缺失语义, 不得编造默认值.
 
@@ -451,6 +454,8 @@ Read model 使用独立的 Index Writer coordinator, 不复用 Archive commit lo
 - Retired root 删除失败: 报告 exact path 与 typed error, 不跟随 symlink、不跨 mount、不使用更强删除 primitive.
 
 ## Compatibility and Migration
+
+旧 Generation 缺少 `platform` 时不迁移、不回写. Read Model 在 projection boundary 仅对 `tool.name = image_gen.imagegen` 推断 `openai` 并标记 `legacy_inferred`; 其他缺失情况为 `unknown`. Incremental catch-up 与 full rebuild 使用同一规则. 详见 ADR 0014.
 
 Schema 位于 `schemas/asset-library/v<formatVersion>/`. 每次写入都使用当前 Library version 对应 validator.
 

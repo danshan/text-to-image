@@ -41,8 +41,12 @@ Image Asset 在作为存续 Generation 视觉输入时承担的关系角色. 它
 _Avoid_: Reference asset, copied input
 
 **Generation**:
-一次不可变的图片生成工具调用, 绑定一个 Prompt Revision 和一组确定的 Reference Image. 重试会产生新的 Generation, 单个 Generation 可以有零个或多个输出, 终态为 `succeeded`, `failed` 或 `interrupted`; `interrupted` 表示工具调用结果无法确定.
+一次不可变的图片生成工具调用, 绑定一个 Prompt Revision 和一组确定的 Reference Image. 一次用户请求可以基于相同输入产生多个彼此独立的 Generation; 它们分别提交并允许部分成功, 不构成原子 Batch. 重试会产生新的 Generation, 单个 Generation 可以有零个或多个输出, 终态为 `succeeded`, `failed` 或 `interrupted`; `interrupted` 表示工具调用结果无法确定.
 _Avoid_: Creation, batch, retry
+
+**Generation Platform**:
+用户为一次 Generation 选择的生成平台身份. `OpenAI` 表示通过 Codex 内置图片生成能力执行, `Grok` 表示通过 xAI API 执行; 它不同于实际调用工具、模型或传输协议. 新平台可以在不改变 Generation 含义的前提下加入.
+_Avoid_: Provider, tool, model, API
 
 **Generation Issue**:
 由尚未 Purge 的 Creation 中, 已提交 Generation 的 known failure 或 uncertain outcome 表达的用户关注事项. 它不是独立持久化实体, 不是 Image Asset, 也不改变 Generation 的 immutable provenance; Creation Purge 提交后随所属历史一同消失.
@@ -53,7 +57,7 @@ _Avoid_: Failed image, broken asset, prompt violation
 _Avoid_: Prompt violation, policy verdict, moderation error
 
 **Replay**:
-尽力复用既有 Generation 的全部已知输入和参数而产生的新 Generation. 它保留 provenance, 但不承诺像素级相同的输出.
+尽力复用既有 Generation 的 Generation Platform、全部已知输入和参数而产生的新 Generation. 它保留 provenance, 但不承诺像素级相同的输出; 改用其他 Generation Platform 属于基于既有 Prompt Revision 的新 Generation, 不是 Replay.
 _Avoid_: Reproduction, deterministic retry
 
 **Archive**:

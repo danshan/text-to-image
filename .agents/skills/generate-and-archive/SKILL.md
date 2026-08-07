@@ -16,6 +16,7 @@ compatibility: Requires the repository assetctl npm script, built-in image_gen t
 - 所有 Output 都归档. 主观质量不佳也不能丢弃, 后续通过 Curation 整理.
 - 不编造 model, seed, quality 或未暴露参数. 未知值使用 `null` 或省略.
 - 不自动 retry. Replay 与 retry 都必须是新的显式 Generation.
+- Shared Writer 为当前 built-in workflow 固定记录 Generation Platform `openai`; Skill 不从 tool name 推导平台, 也不接受任意 platform 参数.
 
 ## Load References
 
@@ -118,6 +119,7 @@ Output-stage Safety Rejection 必须表述为生成结果被拒绝, 不得断言
 - Prompt Revision 的 Archive relative path.
 - 每个 Output 的 Archive relative path, SHA-256, media type 与尺寸.
 - tool name `image_gen.imagegen`, 已知 model/parameters 或明确 unknown.
+- Generation Platform `openai`.
 - Reference Image roles 与 guidance 摘要.
 - 每个 Session Image 的 source index、imported 或 reused 状态与最终 Image Asset SHA-256; 不暴露 opaque internal handle.
 - Draft concurrent edit, index degraded, quality observation 或 recovery warning.

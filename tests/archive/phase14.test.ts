@@ -161,6 +161,7 @@ describe("Phase 14 Generation Workflow contracts", () => {
         },
       )) as {
         committed: boolean;
+        generation: { platform: string };
         index: { status: string };
         repositoryTimings: { finalizeAndIndexMs: number };
         telemetry: {
@@ -176,6 +177,7 @@ describe("Phase 14 Generation Workflow contracts", () => {
       };
       expect(finalized).toMatchObject({
         committed: true,
+        generation: { platform: "openai" },
         index: { status: "ready" },
         telemetry: {
           workflowRunId: "phase14-cli-workflow",

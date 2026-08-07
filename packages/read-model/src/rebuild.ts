@@ -49,6 +49,17 @@ function jsonText(value: unknown, fallback: unknown): string {
   return JSON.stringify(value ?? fallback);
 }
 
+function generationPlatform(
+  value: JsonRecord,
+  tool: JsonRecord,
+): ["openai" | null, "recorded" | "legacy_inferred" | "unknown"] {
+  if (value.platform === "openai") return ["openai", "recorded"];
+  if (value.platform === undefined && tool.name === "image_gen.imagegen") {
+    return ["openai", "legacy_inferred"];
+  }
+  return [null, "unknown"];
+}
+
 async function readJson(path: string): Promise<JsonRecord> {
   const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
   if (!isObject(parsed)) {
@@ -167,18 +178,21 @@ export async function indexMarker(
     if (record.kind === "generation" || record.path.endsWith("/generation.json")) {
       const value = await readJson(absolutePath);
       const tool = isObject(value.tool) ? value.tool : {};
+      const [platformId, platformSource] = generationPlatform(value, tool);
       database
         .prepare(
           `INSERT OR IGNORE INTO generations(
-          id, creation_id, prompt_revision_id, replay_of_generation_id, status, outcome_known,
+          id, creation_id, prompt_revision_id, replay_of_generation_id, platform_id, platform_source, status, outcome_known,
           tool_name, tool_model, parameters_json, started_at, completed_at, error_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           stringValue(value, "id"),
           stringValue(value, "creationId"),
           stringValue(value, "promptRevisionId"),
           nullableString(value, "replayOfGenerationId"),
+          platformId,
+          platformSource,
           stringValue(value, "status"),
           booleanValue(value, "outcomeKnown") ? 1 : 0,
           stringValue(tool, "name", "unknown"),

@@ -1,14 +1,15 @@
 ---
 title: Generation Workflow Design
-status: draft
+status: accepted
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-07
 related:
   - ../../CONTEXT.md
   - asset-library.md
   - ../adr/0002-enforce-the-archive-with-repository-owned-controls.md
   - ../adr/0006-commit-generations-atomically.md
   - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
+  - ../adr/0014-record-generation-platform-with-compatible-expansion.md
   - purge-workflow.md
 ---
 
@@ -62,6 +63,7 @@ MVP 不支持:
 10. 自动 retry 禁止; Replay 和 retry 都需要新的显式 Generation.
 11. Prepare 归档的 effective Prompt 与传入 built-in tool 的 Prompt 必须 UTF-8 byte-identical, 并在 invocation marker 前通过 SHA-256 gate.
 12. Workflow telemetry 是可丢弃诊断数据, 不属于 Archive, 其失败不得影响 Generation terminal status 或 commit.
+13. 当前 built-in OpenAI Writer 在每个 Generation 终态显式保存 `platform: openai`; Platform 不从 Tool、Model 或 Parameters 代替生成.
 
 ## Inputs
 
@@ -281,6 +283,7 @@ Skill 最终报告:
 
 - Creation、Revision、Generation 和 transaction ID.
 - Generation terminal status.
+- Generation Platform `openai`.
 - Archive 内 Output path 与 hash.
 - 实际 Prompt Revision path.
 - built-in tool mode.
@@ -315,7 +318,7 @@ Workflow telemetry 不写入 immutable Archive. 同一个 `workflowRunId` 关联
 
 ## Replay
 
-Replay 读取源 Generation 的 Prompt Revision、Reference Image relation 和全部已知 tool fields, 创建新 transaction 和 Generation. 不复制未知参数, 不保证相同像素.
+Replay 读取源 Generation 的 Generation Platform、Prompt Revision、Reference Image relation 和全部已知 tool fields, 创建新 transaction 和 Generation. 不复制未知参数, 不保证相同像素. 当前 execution slice 只支持 OpenAI; 改用其他 Generation Platform 属于基于既有 Prompt Revision 的新 Generation, 不是 Replay.
 
 `replayOfGenerationId` 只指向直接 Replay source, 允许形成链. UI 可以追溯链, validator 要求 source Generation 已提交.
 
@@ -374,6 +377,8 @@ Hook 永远不写资产、不自动 repair、不清理 staging. 因为某些工�
 - Prompt hash mismatch: 在 invocation marker 前 fail closed, 不调用图片工具.
 
 ## Compatibility
+
+format `1` 允许旧 Generation 缺少 `platform`. Read Model 对缺失字段仅在 `tool.name = image_gen.imagegen` 时推断 legacy OpenAI, 其他情况显示 Unknown; projection 不修改 Archive. 新 Writer 必须显式写入受支持 machine ID. 本阶段不增加 Batch、provider framework 或 Grok execution path.
 
 Skill 的 supported Library format range 必须显式声明. 新 Schema 未被 Skill 支持时, Skill 拒绝生成, 不进行 best-effort 写入.
 

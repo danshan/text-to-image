@@ -201,7 +201,7 @@ stdin request:
 npm run assetctl -- generation commit --library <library-root> --transaction <transaction-id>
 ```
 
-只把 stdout 中 `committed: true` 且存在有效 Commit Marker 视为 Archive success. Commit 后保留用户 Prompt Draft 的原文和语言, hash 未变化时只更新 `basedOnRevisionId`; effective Prompt 只存在于 immutable Prompt Revision. Draft hash 冲突和 index failure 是 warning, 不回滚已经提交的 Generation.
+只把 stdout 中 `committed: true` 且存在有效 Commit Marker 视为 Archive success. 当前 shared Writer 在 terminal Generation record 中写入 `platform: "openai"`; CLI 不接受独立 platform request, 也不从 tool name 推导该字段. Commit 后保留用户 Prompt Draft 的原文和语言, hash 未变化时只更新 `basedOnRevisionId`; effective Prompt 只存在于 immutable Prompt Revision. Draft hash 冲突和 index failure 是 warning, 不回滚已经提交的 Generation.
 
 ## Happy-path Finalize
 

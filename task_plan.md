@@ -304,9 +304,28 @@ Phase 17
 7. Replaceable read models use `DELETE` journal mode so atomic replacement never combines a new main file with an old WAL/SHM generation.
 8. Cross-process degradation state is a disposable `.cache/index-degradation.json`; successful catch-up or rebuild clears it, and Server health only exposes bounded diagnostics.
 
+### Phase 19: Generation Platform Provenance
+
+- [x] Add an optional format `1` Generation Platform field and require the current OpenAI Writer to record `openai`.
+- [x] Project recorded, legacy-inferred, and unknown Platform identity through catch-up, rebuild, API, Creation Timeline, and Generation Detail.
+- [x] Preserve Tool, Model, Parameters, immutable Archive records, and Commit Marker digests.
+- [x] Add Schema, fixture, Writer, read-model, Web, and browser coverage.
+- [x] Record Replay and future-platform boundaries without adding Batch, a provider framework, or Grok execution.
+- [x] Run root verification, update execution records, and cross-check formal documentation.
+- **Status:** completed
+
+#### Confirmed Contract
+
+1. Generation Platform is a stable provenance field distinct from Tool, Model, Parameters, and transport API.
+2. Format `1` keeps `platform` optional for compatibility; every new built-in OpenAI Generation terminal record writes `openai` through the shared Writer.
+3. Legacy records with `tool.name = image_gen.imagegen` project as legacy-inferred OpenAI; other records without `platform` project as Unknown.
+4. Incremental catch-up and full rebuild share that projection. They never modify or backfill Archive records.
+5. Replay preserves the source platform boundary; selecting another platform is a new Generation based on an existing Prompt Revision, not Replay.
+6. This phase does not add Batch, a provider framework, an adapter registry, or Grok execution.
+
 ## Remaining Design Questions
 
-无. Phase 17 核心 vertical slice 已实现, 当前剩余异步 maintenance progress、完整 phase failpoint、安全故障矩阵与 browser E2E.
+无. Phase 19 只交付 Generation Platform provenance 与兼容读取, 后续平台在出现真实 execution slice 时再扩展.
 
 ## Errors Encountered
 

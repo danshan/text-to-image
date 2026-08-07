@@ -402,7 +402,10 @@ describe("archive vertical slice", () => {
     });
     const committed = commitGeneration(libraryRoot, prepared.transactionId);
 
-    expect(committed.generation.status).toBe("succeeded");
+    expect(committed.generation).toMatchObject({
+      status: "succeeded",
+      platform: "openai",
+    });
     expect(committed.generation.outputs).toHaveLength(1);
     expect(committed.draftUpdated).toBe(true);
     expect(

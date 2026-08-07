@@ -1,8 +1,8 @@
 ---
 title: Product Requirements
-status: draft
+status: accepted
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-07
 related:
   - ../../CONTEXT.md
   - ../design/asset-library.md
@@ -165,6 +165,9 @@ related:
 - `FR-GEN-020`: Generation happy path 必须收敛为只读 `preflight`、高层 `begin`、built-in image generation 与高层 `finalize`. Begin 复用 import、prepare、Prompt hash gate 与 mark primitives; Finalize 复用 capture、terminal finalize、commit 与 incremental index primitives. Recovery、fault injection 与精确状态检查继续使用低层命令, 两者不得形成第二套 Archive 写入逻辑.
 - `FR-GEN-021`: built-in result 已在会话中可见时, 视觉质量检查不得阻塞 Commit Marker 与 index ready. 图片工具返回可解析的本地 Output 后, Skill 的下一动作必须启动高层 Finalize; 只有结果不可见或需要验证 committed bytes 时, 才在 commit 后读取 Archive Output.
 - `FR-GEN-022`: Workspace Ready 的普通 Generation 只加载 Generation Skill contracts 与一次 Preflight snapshot. 完整项目计划、设计与进度文档只用于修改项目行为或异常恢复, 不属于每次生成前置条件.
+- `FR-GEN-023`: 新 Generation 必须显式保存受支持的 Generation Platform machine ID. 当前 built-in OpenAI workflow 固定保存 `openai`, 且不得用 platform 替代 Tool、Model 或 Parameters.
+- `FR-GEN-024`: format `1` Reader 必须接受旧 Generation 缺少 `platform`; `tool.name = image_gen.imagegen` 时投影为 legacy inferred OpenAI, 其他缺失情况投影为 Unknown. Reader 不回写或迁移历史 Archive.
+- `FR-GEN-025`: Replay 保留源 Generation Platform; 改用其他 Generation Platform 属于基于既有 Prompt Revision 的新 Generation, 不是 Replay. 本阶段不引入 Batch、provider framework 或 Grok execution path.
 
 ### Transaction and Recovery
 
@@ -184,8 +187,8 @@ related:
 - `FR-UI-001`: 默认入口是按时间倒序的可见生成 Image Asset 网格.
 - `FR-UI-002`: 外部导入且从未作为 Output 的 Image Asset 默认只在参考图库或显式筛选中出现.
 - `FR-UI-003`: Image Asset 详情展示生产来源、后续引用、相关 Generation 与 Curation.
-- `FR-UI-004`: Generation 详情展示 Prompt、Change Instruction、Reference Image roles、Output、已知参数和错误摘要.
-- `FR-UI-005`: Creation 页面展示 Prompt Revision 分支和 Generation 时间线.
+- `FR-UI-004`: Generation 详情展示 Generation Platform、Prompt、Change Instruction、Reference Image roles、Output、Tool、Model、Parameters 和错误摘要.
+- `FR-UI-005`: Creation 页面展示 Prompt Revision 分支和包含 Generation Platform 的 Generation 时间线.
 - `FR-UI-006`: Curation 与 Archive 分离, 修改 Curation 不改变 provenance.
 - `FR-UI-007`: 第一版提供全文搜索、组合过滤、URL 可恢复筛选和确定排序.
 - `FR-UI-008`: SQLite 和 thumbnail cache 可以完全删除并重建.
@@ -246,6 +249,7 @@ related:
 - Safety Rejection 能归档 input、output 与 unknown moderation stage 及零到多个 categories, 旧的无 `moderation` Generation record 仍通过 Schema 校验.
 - Gallery 对每个 active Creation 只展示最新 failed 或 interrupted Generation Issue; 后续 succeeded Generation 会移除该 Creation 的全局提示, 历史仍可从 Timeline 访问.
 - Generation Detail 对 output-stage rejection 使用非归罪文案和 category-level guidance, 不把建议描述为已确认的触发词.
+- 新 OpenAI Generation 的 record、Commit Marker、read model、API 与 Web UI 均保留显式 Platform; format `1` 历史 Generation 在 rebuild 后仍按相同规则显示 legacy-inferred OpenAI 或 Unknown, 且 Archive bytes 不变.
 - Creation provenance Focus 在无 URL 参数时选择最新 Generation, 在 deep link、刷新、复制链接和 browser back/forward 后恢复对应 Prompt Revision 与 Generation; 同一 Revision 的全部 Generation 保持可见并被共同高亮.
 - Image Asset 的每条 used-as-reference relation 同时暴露 Generation 与该 usage 使用的 Prompt Revision, 不把多个 Generation 合并为虚假的直接 Reference Image -> Prompt Revision 关系.
 - Web UI 在 `1024x768`, `1280x720`, `1366x768`, `1440x900` 和 `1920x1080` 下完成 Light、Dark、System theme 与 keyboard/focus 验收; Sidebar 在所有主题下保持深色且文字、边框和 focus ring 可读.

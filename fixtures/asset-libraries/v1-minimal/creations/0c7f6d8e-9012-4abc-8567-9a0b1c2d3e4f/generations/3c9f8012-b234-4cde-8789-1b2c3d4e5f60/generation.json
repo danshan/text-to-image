@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "3c9f8012-b234-4cde-8789-1b2c3d4e5f60",
+  "creationId": "0c7f6d8e-9012-4abc-8567-9a0b1c2d3e4f",
+  "promptRevisionId": "2b8e7f90-a123-4bcd-8678-0a1b2c3d4e5f",
+  "replayOfGenerationId": null,
+  "status": "succeeded",
+  "outcomeKnown": true,
+  "references": [],
+  "outputs": [],
+  "tool": {
+    "name": "image_gen.imagegen",
+    "model": null,
+    "parameters": {}
+  },
+  "startedAt": "2026-08-02T12:02:05.000Z",
+  "completedAt": "2026-08-02T12:03:00.000Z",
+  "error": null
+}

@@ -84,6 +84,10 @@ export interface IndexedGeneration {
   creationId: string;
   promptRevisionId: string;
   replayOfGenerationId: string | null;
+  platform: {
+    id: "openai" | null;
+    source: "recorded" | "legacy_inferred" | "unknown";
+  };
   status: "succeeded" | "failed" | "interrupted";
   outcomeKnown: boolean;
   references: Array<{

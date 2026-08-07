@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "b5e7d8f9-0123-4345-9678-ab1c2d3e4f50",
+  "operation": "initialize_creation",
+  "createdAt": "2026-08-02T12:02:01.000Z",
+  "records": [
+    {
+      "kind": "creation",
+      "path": "creations/0c7f6d8e-9012-4abc-8567-9a0b1c2d3e4f/creation.json",
+      "sha256": "97ab22b857fa156b94c0abe806f4203c34d4cc372ef38e462b136fc0c1c30746"
+    }
+  ]
+}

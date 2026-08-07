@@ -1,8 +1,8 @@
 ---
 title: System Architecture
-status: draft
+status: accepted
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-07
 related:
   - ../product/requirements.md
   - asset-library.md
@@ -13,6 +13,7 @@ related:
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
   - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
+  - ../adr/0014-record-generation-platform-with-compatible-expansion.md
 ---
 
 # 系统架构
@@ -202,6 +203,8 @@ SQLite -> reconstruct Archive
 ## Read Paths
 
 普通查询优先使用 SQLite read model. 权威 detail response 必须包含或核对 Archive source version. Diagnostics、validation 与 rebuild 直接遍历 Commit Marker 和 records.
+
+Generation projection 单独保存 Platform identity 与来源. 显式 `platform: "openai"` 映射为 recorded OpenAI; 缺少字段且 tool name 为 `image_gen.imagegen` 的 format `1` 历史记录映射为 legacy-inferred OpenAI; 其他缺失字段映射为 Unknown. Incremental catch-up 与 full rebuild 共用同一映射, 不回写或迁移 Archive.
 
 Read model lag 允许在运行时发生, 但必须可观察. API health 返回 last indexed Marker、latest Archive Marker、lag count、degraded state 与 stable reason code. Server 启动和 candidate preparation 对 lagging index 执行增量 catch-up, 对 missing、Schema-incompatible 或 confirmed-corrupt index 执行 full rebuild. Web transition 可以热切换 root; CLI 修改 Library selection 或完成 Library Merge 后, 当前 process 仍需通过 Settings Retry/select 或重新启动以读取新 snapshot.
 

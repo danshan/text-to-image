@@ -42,14 +42,25 @@ test("traverses immutable provenance from an image to its creation", async ({ pa
   await page.locator(".relation-card").click();
   await expect(page.getByRole("heading", { level: 2, name: "Prompt Revision" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Outputs" })).toBeVisible();
+  await expect(page.getByText("Platform")).toBeVisible();
+  await expect(page.getByText("OpenAI")).toBeVisible();
 
   await page.getByRole("link", { name: /Open linked Prompt Revision/ }).click();
   await expect(page).toHaveURL(/\/creations\/[^?]+\?revision=[^&]+&generation=/);
   await expect(page.getByRole("heading", { level: 1, name: "Minimal Fixture" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Prompt History" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Generation Timeline" })).toBeVisible();
+  await expect(
+    page
+      .locator(".timeline")
+      .getByText(/^OpenAI ·/)
+      .first(),
+  ).toBeVisible();
   await expect(page.locator(".revision-item.is-focused")).toHaveCount(1);
   await expect(page.locator(".timeline > li.is-focused")).toHaveCount(1);
+
+  await page.goto("/creations/0c7f6d8e-9012-4abc-8567-9a0b1c2d3e4f");
+  await expect(page.locator(".timeline").getByText(/^OpenAI \(legacy inferred\)/)).toBeVisible();
 });
 
 test("keeps gallery search in the URL and restores it through browser history", async ({

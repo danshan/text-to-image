@@ -632,6 +632,7 @@ function finalizeGeneration(
       typeof transaction.request.replayOfGenerationId === "string"
         ? transaction.request.replayOfGenerationId
         : null,
+    platform: "openai",
     status: result.status,
     outcomeKnown: result.outcomeKnown,
     references,

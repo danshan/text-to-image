@@ -1,5 +1,6 @@
 import type { ApiClient } from "../api/client";
 import { GenerationErrorPanel } from "../components/generation-issue";
+import { generationPlatformLabel } from "../components/generation-platform";
 import { formatDate } from "../components/image-grid";
 import { RecordError, RecordLoading } from "../components/states";
 import { GenerationStatusBadge } from "../components/status";
@@ -145,6 +146,10 @@ export function GenerationDetailPage({
             <span className="eyebrow">Tool record</span>
             <h2>Invocation</h2>
             <dl className="stacked-facts">
+              <div>
+                <dt>Platform</dt>
+                <dd>{generationPlatformLabel(generation.platform)}</dd>
+              </div>
               <div>
                 <dt>Name</dt>
                 <dd>{generation.tool.name || "Unknown"}</dd>

@@ -13,6 +13,7 @@ function generation(overrides: Partial<GenerationView> = {}): GenerationView {
     outcomeKnown: true,
     references: [],
     outputs: [],
+    platform: { id: "openai", source: "recorded" },
     tool: { name: "image_gen.imagegen", model: null, parameters: {} },
     startedAt: "2026-08-03T00:00:00.000Z",
     completedAt: "2026-08-03T00:00:01.000Z",

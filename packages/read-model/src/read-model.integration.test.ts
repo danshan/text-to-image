@@ -45,7 +45,9 @@ async function writeObject(
   return { kind, path, sha256: digest(content) };
 }
 
-async function fixture(): Promise<{ root: string; assetSha256: string }> {
+async function fixture(
+  options: { platform?: "openai"; toolName?: string } = {},
+): Promise<{ root: string; assetSha256: string }> {
   const root = await mkdtemp(join(tmpdir(), "text-to-image-read-model-"));
   roots.push(root);
   await writeFile(
@@ -85,6 +87,7 @@ async function fixture(): Promise<{ root: string; assetSha256: string }> {
     creationId,
     promptRevisionId: revisionId,
     replayOfGenerationId: null,
+    ...(options.platform ? { platform: options.platform } : {}),
     status: "succeeded",
     outcomeKnown: true,
     references: [
@@ -95,7 +98,7 @@ async function fixture(): Promise<{ root: string; assetSha256: string }> {
       },
     ],
     outputs: [{ index: 0, assetSha256, mediaType: "image/png", width: 1536, height: 1024 }],
-    tool: { name: "image_gen.imagegen", model: null, parameters: {} },
+    tool: { name: options.toolName ?? "image_gen.imagegen", model: null, parameters: {} },
     startedAt: "2026-08-02T12:02:05.000Z",
     completedAt: "2026-08-02T12:03:00.000Z",
     error: null,
@@ -239,7 +242,10 @@ describe("ReadModel", () => {
       rating: 4,
       entityRevision: 2,
     });
-    expect(model.getGeneration(generationId)?.outputs[0]?.assetSha256).toBe(assetSha256);
+    expect(model.getGeneration(generationId)).toMatchObject({
+      platform: { id: "openai", source: "legacy_inferred" },
+      outputs: [{ assetSha256 }],
+    });
     expect(model.getRevisions(creationId)[0]?.prompt).toContain("quiet portrait");
     expect(model.getReferenceRelations(assetSha256)).toEqual([
       {
@@ -256,6 +262,26 @@ describe("ReadModel", () => {
       lastIndexedMarker: markerId,
     });
     model.close();
+  });
+
+  it("projects recorded platform and leaves unrecognized legacy tools Unknown", async () => {
+    const recordedFixture = await fixture({ platform: "openai" });
+    const recorded = new ReadModel(recordedFixture.root);
+    await recorded.open();
+    expect(recorded.getGeneration(generationId)?.platform).toEqual({
+      id: "openai",
+      source: "recorded",
+    });
+    recorded.close();
+
+    const unknownFixture = await fixture({ toolName: "legacy.generator" });
+    const unknown = new ReadModel(unknownFixture.root);
+    await unknown.open();
+    expect(unknown.getGeneration(generationId)?.platform).toEqual({
+      id: null,
+      source: "unknown",
+    });
+    unknown.close();
   });
 
   it("derives one latest issue per active Creation and clears it after recovery", async () => {

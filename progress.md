@@ -441,6 +441,27 @@
   - 首次 Phase 18 多进程测试有 3 个 fixture failure: pending Promise 未保持 holder process 存活、guard 在 lock release 后清理产生 false overlap、一个断言错误要求 optional field 等于 `undefined`; 使用真实 timer handle、pre-release cleanup 与正确断言后 3 tests passed.
   - Focused integration 在默认 sandbox 内的既有 client-abort test 无法绑定 loopback listener; scoped outside-sandbox 同命令重跑后 4 files / 30 tests passed.
 
+### Phase 19: Generation Platform Provenance
+
+- **Status:** completed
+- 已完成:
+  - format `1` Generation Schema 增加 optional `platform`, 当前 shared OpenAI Writer 在成功、失败和中断终态固定写入 `openai`; Tool、Model 和 Parameters 保持独立.
+  - Read model Schema 升级到 version `2`, shared Marker projection 区分 `recorded`, `legacy_inferred` 与 `unknown`; incremental catch-up 和 full rebuild 不修改旧 Archive.
+  - API、Creation Timeline 与 Generation Detail 展示 OpenAI、legacy inferred OpenAI 或 Unknown, 并保留原 invocation fields.
+  - 增加 legacy valid fixture、Schema/Writer/CLI/read-model/Web/browser regressions、ADR 0014, 并同步 Skill contract、formal docs、task plan 与 findings.
+- 最终验证:
+  - `npm test`: 6 root files / 21 tests、31 Hook/Skill tests 与 13 Web files / 28 tests passed.
+  - `npm run test:integration`: 9 files / 65 tests passed.
+  - `npm run test:e2e`: 13 passed, 1 intentional WebKit mutation skip; recorded 与 legacy-inferred Platform 断言和更新后的 Creation visual baselines passed.
+  - `npm run build`, `npm run lint`, `npm run typecheck`, `npm run fixtures:validate` 与 `git diff --check`: passed.
+  - `npm run docs:check` 完成全部扫描后只报告 Multica 自动管理的 `AGENTS.md` runtime block 中 1 个中文标点和 4 个非文件 mention/example links; 本阶段正式文档没有 diagnostics.
+  - Root `npm run format:check` 只报告 Multica runtime-owned `.agent_context/issue_context.md`, `.multica/daemon_task_context.json`, `.multica/project/resources.json` 与 `AGENTS.md`; 对本阶段 exact files 的 Prettier check passed.
+- 错误:
+  - Read-model Schema version 从 `1` 升到 `2` 后, Phase 18 multi-process test worker 的 usability probe 仍硬编码 `"1"`, 导致四个 holder 都被错误计入 rebuild; 改为复用 `READ_MODEL_VERSION` 后 focused 3 tests 与完整 65 integration tests passed.
+  - Legacy fixture 初次挂到既有 E2E Creation, 增加了第三个 Revision 和 Timeline item; 改为独立无 Output Creation 后既保留兼容 fixture, 又恢复原 provenance 用例.
+  - 首次 legacy browser navigation 缺少 mutable Prompt Draft, Creation API 返回 `ENOENT`; 补齐 fixture Draft metadata 后 Chromium 与 WebKit provenance tests passed.
+  - Platform 文案改变 Creation screenshot; 检查差异仅来自预期 UI 后更新 Chromium 与 WebKit baselines.
+
 ## Test Results
 
 | Test                                | Expected                                                                            | Actual                                                                                         | Status |

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "a4d6c7e8-f901-4234-8567-9a0b1c2d3e4f",
+  "operation": "generation",
+  "createdAt": "2026-08-02T12:03:01.000Z",
+  "records": [
+    {
+      "kind": "prompt",
+      "path": "creations/0c7f6d8e-9012-4abc-8567-9a0b1c2d3e4f/revisions/2b8e7f90-a123-4bcd-8678-0a1b2c3d4e5f/prompt.md",
+      "sha256": "4fcab23ba9ca6ad89a99b5d0e4497808a8cb322f8b91acfbf22cb2d0cc4f576e"
+    },
+    {
+      "kind": "revision",
+      "path": "creations/0c7f6d8e-9012-4abc-8567-9a0b1c2d3e4f/revisions/2b8e7f90-a123-4bcd-8678-0a1b2c3d4e5f/revision.json",
+      "sha256": "c99bd725585988a002f5c5761d38d8a3e71813526b2bafd76bfdff3e3517457a"
+    },
+    {
+      "kind": "generation",
+      "path": "creations/0c7f6d8e-9012-4abc-8567-9a0b1c2d3e4f/generations/3c9f8012-b234-4cde-8789-1b2c3d4e5f60/generation.json",
+      "sha256": "88475ff55591a79649fcf47f6c491ee320d1d6defd3b5c8de22a2a78112705bc"
+    }
+  ]
+}

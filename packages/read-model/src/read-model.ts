@@ -515,6 +515,10 @@ export class ReadModel {
       creationId: stringColumn(row, "creation_id"),
       promptRevisionId: stringColumn(row, "prompt_revision_id"),
       replayOfGenerationId: nullableStringColumn(row, "replay_of_generation_id"),
+      platform: {
+        id: nullableStringColumn(row, "platform_id") as IndexedGeneration["platform"]["id"],
+        source: stringColumn(row, "platform_source") as IndexedGeneration["platform"]["source"],
+      },
       status: stringColumn(row, "status") as IndexedGeneration["status"],
       outcomeKnown: numberColumn(row, "outcome_known") === 1,
       references: referenceRows.map((reference) => ({

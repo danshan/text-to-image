@@ -1,8 +1,8 @@
 ---
 title: Testing Strategy
-status: draft
+status: accepted
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-07
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -14,6 +14,7 @@ related:
   - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
   - ../design/purge-workflow.md
   - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
+  - ../adr/0014-record-generation-platform-with-compatible-expansion.md
 ---
 
 # 测试策略
@@ -74,6 +75,7 @@ related:
 - cross-record dangling reference.
 - future `schemaVersion`.
 - Generation error without `moderation` and with valid input、output、unknown stages.
+- Generation 缺少 optional `platform`、显式 `platform: "openai"` 与 unsupported platform enum.
 - invalid moderation stage、duplicate categories 与 unexpected provider fields.
 - valid / invalid Purge Plan、journal、target union、phase、plan digest、abandonment transaction IDs 与 unknown field.
 
@@ -191,6 +193,7 @@ Purge concurrency 使用 Server request drain 与多个独立 child process 验�
 - material Prompt change confirmation.
 - Draft concurrent edit during generation.
 - index failure after Archive commit.
+- OpenAI happy path 由 shared Writer 写入 `platform: "openai"`, Commit Marker 发布且 full validator 接受结果.
 - materialized Session Image 在固定 Library root 中先 inspection、后 import、再 prepare.
 - 多张 Session Image 在任一 inspection 失败时不执行任何 import 或 Generation prepare.
 - opaque handle 报告 `SESSION_IMAGE_NOT_MATERIALIZED`, sandbox denial 不误报为 missing.
@@ -278,6 +281,7 @@ Vitest 覆盖 pure UI state 和 components; Playwright 覆盖真实 browser flow
 - Gallery -> Image -> Generation -> Creation provenance navigation, 包括详情页返回精确 Revision/Generation Focus.
 - Prompt branch Focus 与 Compare 独立状态、URL round-trip、默认最新 Generation、同 Revision 多 Generation 高亮与 Reference usage 分组.
 - Generation Timeline 的 Prompt link、Reference thumbnails 与完整 Timeline 保留语义.
+- Creation Timeline 与 Generation Detail 区分 recorded OpenAI、legacy-inferred OpenAI 与 Unknown, 同时保留 tool、model 和 parameters.
 - Image used-as-reference relation 同时返回真实 Generation 与 Prompt Revision, 不丢失 roles 或 guidance.
 - Prompt branch selection 与 diff labels.
 - Curation success/conflict/retry.

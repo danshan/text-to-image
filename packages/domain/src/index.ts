@@ -2,8 +2,10 @@ export const LIBRARY_FORMAT_VERSION = 1 as const;
 export const SCHEMA_VERSION = 1 as const;
 
 export const REFERENCE_ROLES = ["subject", "style", "composition", "palette", "other"] as const;
+export const GENERATION_PLATFORMS = ["openai"] as const;
 
 export type ReferenceRole = (typeof REFERENCE_ROLES)[number];
+export type GenerationPlatform = (typeof GENERATION_PLATFORMS)[number];
 export type GenerationStatus = "succeeded" | "failed" | "interrupted";
 export type TransactionState =
   "prepared" | "invocation_started" | "outputs_captured" | "ready_to_commit";
@@ -130,6 +132,7 @@ export interface GenerationRecord {
   creationId: string;
   promptRevisionId: string;
   replayOfGenerationId: string | null;
+  platform?: GenerationPlatform;
   status: GenerationStatus;
   outcomeKnown: boolean;
   references: ReferenceImage[];

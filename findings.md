@@ -136,6 +136,14 @@
 - macOS sibling containment 需要比较 parent `realpath`, 否则 `/var` 与 `/private/var` 会被误判为越界.
 - 两次 rename 与 journal 更新之间存在真实 crash window. Recovery 不能只信 phase, 还必须核对 active、candidate 与 retired exact path 的存在组合, 并在 cutover 已开始时 roll forward.
 
+## Phase 19 Generation Platform Findings
+
+- Tool name 是执行机制, 不能替代稳定的 Generation Platform provenance. 现有 format `1` 只有 `image_gen.imagegen` 足以对缺失字段做受限 legacy OpenAI inference.
+- Optional format `1` 字段配合新 Writer mandatory write 可以兼容旧 Archive, 不需要改变不可变 record 或 Commit Marker digest.
+- Legacy inference 放在 shared Marker projection boundary 后, incremental catch-up 与 full rebuild 自动保持一致; read-model Schema bump 只替换 cache, 不是 Archive migration.
+- 当前只有一个真实 OpenAI execution slice, 因此 Writer 直接记录 `openai` 比提前建立 provider interface、registry 或 Batch contract 更小且更准确.
+- API 必须同时返回 Platform ID 与 provenance source, UI 才能区分 recorded OpenAI、legacy-inferred OpenAI 与 Unknown, 并继续独立展示 Tool、Model 和 Parameters.
+
 ## Research Findings
 
 - Codex 官方手册说明 `AGENTS.md` 是持久仓库指令, 仓库内较近层级覆盖较远层级.

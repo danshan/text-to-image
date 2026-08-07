@@ -26,6 +26,7 @@
     "replayOfGenerationId": {
       "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }]
     },
+    "platform": { "enum": ["openai"] },
     "status": { "enum": ["succeeded", "failed", "interrupted"] },
     "outcomeKnown": { "type": "boolean" },
     "references": {

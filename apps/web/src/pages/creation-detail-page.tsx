@@ -4,6 +4,7 @@ import { CurationEditor } from "../components/curation-editor";
 import { CopyIcon } from "../components/icons";
 import { formatDate } from "../components/image-grid";
 import { generationFailureSummary } from "../components/generation-issue";
+import { generationPlatformLabel } from "../components/generation-platform";
 import { PromptDiff } from "../components/prompt-diff";
 import { PurgeDangerZone } from "../components/purge-danger-zone";
 import { RecordError, RecordLoading } from "../components/states";
@@ -369,8 +370,9 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
                       <Link to={`/generations/${generation.id}`}>Open details</Link>
                     </div>
                     <p className="generation-summary">
-                      {generation.outputs.length} outputs · {generation.references.length}{" "}
-                      references{generation.replayOfGenerationId ? " · replay" : ""}
+                      {generationPlatformLabel(generation.platform)} · {generation.outputs.length}{" "}
+                      outputs · {generation.references.length} references
+                      {generation.replayOfGenerationId ? " · replay" : ""}
                     </p>
                     {generation.status !== "succeeded" && (
                       <div className="timeline-issue" role="status">

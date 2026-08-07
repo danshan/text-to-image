@@ -23,6 +23,7 @@ function generation(
     creationId,
     promptRevisionId,
     replayOfGenerationId: null,
+    platform: { id: "openai", source: "recorded" },
     status: "succeeded",
     outcomeKnown: true,
     references: [
@@ -100,6 +101,7 @@ describe("CreationDetailPage provenance focus", () => {
     await screen.findByRole("heading", { name: "Prompt History" });
     const latestGeneration = document.getElementById(`generation-${generationThreeId}`);
     expect(latestGeneration?.className).toContain("is-focused");
+    expect(latestGeneration?.textContent).toContain("OpenAI");
 
     await user.click(screen.getByRole("button", { name: /R001/ }));
 

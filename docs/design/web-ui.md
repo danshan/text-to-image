@@ -1,8 +1,8 @@
 ---
 title: Web UI Design
-status: draft
+status: accepted
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-07
 related:
   - ../../CONTEXT.md
   - ../product/requirements.md
@@ -14,6 +14,7 @@ related:
   - ../adr/0010-enable-web-controlled-library-hot-switching.md
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
   - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
+  - ../adr/0014-record-generation-platform-with-compatible-expansion.md
 ---
 
 # Web UI 设计
@@ -209,7 +210,7 @@ Query state 编码到 URL. Search input 使用 debounced request, Enter 立即�
 1. Header: title、tags、favorite、`active | shelved` 与 Draft status.
 2. Prompt Draft: Markdown editor、external edit warning、based-on Revision 与 optimistic save.
 3. Prompt History: 单父节点 branch tree, 支持选择两个 Revision 查看 diff.
-4. Generation Timeline: 按时间展示 status、Reference Image、Output 与 Replay relation.
+4. Generation Timeline: 按时间展示 status、Generation Platform、Reference Image、Output 与 Replay relation.
 
 Prompt History 与 Generation Timeline 是同一 provenance 的两个视图, 但不合并为一张 Generation 卡片. Focus 与 Compare 使用独立状态:
 
@@ -257,11 +258,12 @@ Detail 底部提供 Image Asset `Danger Zone`, 这是 Image Asset Purge 的唯�
 - Parent Revision 与 Prompt diff action.
 - Reference Image thumbnails、roles 与 guidance.
 - Output 顺序与 Image Asset links.
+- Generation Platform. 显式 OpenAI 显示 `OpenAI`, format `1` 历史推断显示 `OpenAI (legacy inferred)`, 无法判断时显示 `Unknown`.
 - built-in tool name、已知 model 和 parameters.
 - Replay source 或 derived Replay links.
 - known failure error code、summary 与 optional moderation metadata, 或 interrupted warning.
 
-Unknown tool fields 显示 `Unknown`, 不显示推测值.
+Generation Platform 与 tool、model、parameters 分开显示. Unknown tool fields 显示 `Unknown`, 不显示推测值.
 
 Safety Rejection 使用结构化 warning panel, 不直接渲染 raw JSON. Panel 展示 stage 与工具明确暴露的 categories, 并提供 category-level guidance. Guidance 必须标记为修改建议而非已确认触发词; 只有工具未来返回明确 evidence spans 时才允许精确高亮.
 

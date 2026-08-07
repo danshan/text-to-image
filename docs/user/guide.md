@@ -1,8 +1,8 @@
 ---
 title: User Guide
-status: draft
+status: accepted
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-07
 related:
   - ../product/requirements.md
   - ../design/generation-workflow.md
@@ -117,7 +117,7 @@ Codex 创建完成后会返回 Creation ID. 以后可以直接用标题或 Creat
 
 > 请使用 `$generate-and-archive` 为 Creation "红色机器人森林系列" 读取当前 Prompt Draft, 生成 1 张图片并归档全部结果.
 
-Codex 会检查 Library 状态, 固定实际 Prompt, 调用图片生成工具, 检查输出并完成归档. 完成报告应包含 Creation、Revision、Generation、结果状态、图片路径、尺寸和 SHA-256.
+Codex 会检查 Library 状态, 固定实际 Prompt, 调用图片生成工具, 检查输出并完成归档. 完成报告应包含 Creation、Revision、Generation、Generation Platform、结果状态、图片路径、尺寸和 SHA-256.
 
 ### 3.3 查看结果
 
@@ -363,6 +363,10 @@ Recovery 操作可能发布、取消或隔离事务. 先使用 dry-run 或预览
 Gallery 顶部会显示 active Creation 的最新问题. 后续一次成功 Generation 会让该 Creation 的全局 Issue 消失, 但历史失败仍保留在 Creation Timeline 中. `shelved` Creation 不进入全局问题区域.
 
 Creation Purge 完成并同步 index 后, 该 Creation 与全部 Generation 已不存在, 因而对应 Generation Issue 同时消失. 系统不会保留已 Purge Issue 的历史卡片.
+
+### 8.5 如何理解 Generation Platform
+
+Generation Detail 和 Creation Timeline 会显示本次生成使用的平台. `OpenAI` 表示归档记录显式保存了平台; `OpenAI (legacy inferred)` 表示旧记录没有该字段, 系统根据 `image_gen.imagegen` tool name 推断; `Unknown` 表示旧记录的信息不足. Platform 与 tool、model、parameters 是不同信息, 系统不会为了补字段改写旧 Archive.
 
 ## 9. 常见问题
 

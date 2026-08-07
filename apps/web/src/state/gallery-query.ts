@@ -12,6 +12,7 @@ export interface GalleryQuery {
   role: string;
   generationStatus: string;
   tool: string;
+  provider: string;
   model: string;
   from: string;
   to: string;
@@ -31,6 +32,7 @@ export const defaultGalleryQuery: GalleryQuery = {
   role: "",
   generationStatus: "",
   tool: "",
+  provider: "",
   model: "",
   from: "",
   to: "",
@@ -67,6 +69,7 @@ export function parseGalleryQuery(search: string): GalleryQuery {
     role: params.get("role") ?? "",
     generationStatus: params.get("generationStatus") ?? "",
     tool: params.get("tool") ?? "",
+    provider: params.get("provider") ?? "",
     model: params.get("model") ?? "",
     from: params.get("from") ?? "",
     to: params.get("to") ?? "",
@@ -90,6 +93,7 @@ export function serializeGalleryQuery(query: GalleryQuery): string {
   setIf(params, "role", query.role);
   setIf(params, "generationStatus", query.generationStatus);
   setIf(params, "tool", query.tool);
+  setIf(params, "provider", query.provider);
   setIf(params, "model", query.model);
   setIf(params, "from", query.from);
   setIf(params, "to", query.to);
@@ -111,6 +115,7 @@ export function activeFilterCount(query: GalleryQuery): number {
     query.role,
     query.generationStatus,
     query.tool,
+    query.provider,
     query.model,
     query.from,
     query.to,

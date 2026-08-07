@@ -8,6 +8,7 @@ import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import {
   API_VERSION,
+  creationCurationPatchSchema,
   creationParamsSchema,
   curationPatchSchema,
   draftPutSchema,
@@ -88,6 +89,7 @@ function galleryQuery(value: Record<string, unknown>): GalleryQuery {
   )
     result.role = value.role;
   if (typeof value.tool === "string") result.tool = value.tool;
+  if (typeof value.provider === "string") result.provider = value.provider;
   if (typeof value.model === "string") result.model = value.model;
   if (typeof value.from === "string") {
     result.from = /^\d{4}-\d{2}-\d{2}$/u.test(value.from)
@@ -475,7 +477,7 @@ export async function createApp(
 
   app.patch<{ Params: { creationId: string }; Body: CurationPatchRequest }>(
     "/api/v1/curation/creations/:creationId",
-    { schema: { params: creationParamsSchema, body: curationPatchSchema } },
+    { schema: { params: creationParamsSchema, body: creationCurationPatchSchema } },
     async (request) => {
       const { archive, readModel } = contextFor(request);
       try {

@@ -1,5 +1,6 @@
 const uuid = "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$";
 const sha256 = "^[0-9a-f]{64}$";
+const providerId = "^[a-z][a-z0-9_-]{0,49}$";
 
 export const idParamsSchema = {
   type: "object",
@@ -87,6 +88,7 @@ export const galleryQuerySchema = {
     rating: { type: "integer", minimum: 1, maximum: 5 },
     role: { enum: ["subject", "style", "composition", "palette", "other"] },
     tool: { type: "string", maxLength: 200 },
+    provider: { type: "string", pattern: providerId },
     model: { type: "string", maxLength: 200 },
     from: {
       anyOf: [
@@ -127,6 +129,25 @@ export const curationPatchSchema = {
         note: { type: "string", maxLength: 20000 },
         rating: { anyOf: [{ type: "integer", minimum: 1, maximum: 5 }, { type: "null" }] },
         hidden: { type: "boolean" },
+      },
+    },
+  },
+} as const;
+
+export const creationCurationPatchSchema = {
+  ...curationPatchSchema,
+  properties: {
+    ...curationPatchSchema.properties,
+    patch: {
+      ...curationPatchSchema.properties.patch,
+      properties: {
+        ...curationPatchSchema.properties.patch.properties,
+        providerPreference: {
+          type: "array",
+          maxItems: 10,
+          uniqueItems: true,
+          items: { type: "string", pattern: providerId },
+        },
       },
     },
   },

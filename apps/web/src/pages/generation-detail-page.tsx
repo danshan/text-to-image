@@ -146,12 +146,20 @@ export function GenerationDetailPage({
             <h2>Invocation</h2>
             <dl className="stacked-facts">
               <div>
+                <dt>Provider</dt>
+                <dd>{providerLabel(generation.provider)}</dd>
+              </div>
+              <div>
                 <dt>Name</dt>
                 <dd>{generation.tool.name || "Unknown"}</dd>
               </div>
               <div>
                 <dt>Model</dt>
                 <dd>{generation.tool.model || "Unknown"}</dd>
+              </div>
+              <div>
+                <dt>Provider source</dt>
+                <dd>{generation.providerSource}</dd>
               </div>
               <div>
                 <dt>Started</dt>
@@ -182,4 +190,10 @@ export function GenerationDetailPage({
       </div>
     </div>
   );
+}
+
+function providerLabel(provider: string | null): string {
+  if (provider === "openai") return "OpenAI";
+  if (provider === "xai") return "Grok / xAI";
+  return provider || "Unknown";
 }

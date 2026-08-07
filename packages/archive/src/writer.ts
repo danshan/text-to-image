@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import {
   ArchiveError,
   LIBRARY_FORMAT_VERSION,
+  assertProviderPreference,
   type CreationCuration,
   type CreationRecord,
   type ImageCuration,
@@ -168,6 +169,7 @@ export function createCreation(
     tags: [],
     favorite: false,
     note: "",
+    providerPreference: [],
     updatedAt: adapters.now(),
   };
   assertRecordSchema("creationCuration", curation, `curation/creations/${id}.json`);
@@ -340,7 +342,9 @@ export function updateCreationCuration(
   libraryRoot: string,
   creationId: string,
   expectedEntityRevision: number,
-  patch: Partial<Pick<CreationCuration, "title" | "status" | "tags" | "favorite" | "note">>,
+  patch: Partial<
+    Pick<CreationCuration, "title" | "status" | "tags" | "favorite" | "note" | "providerPreference">
+  >,
   adapters: RuntimeAdapters = defaultRuntimeAdapters,
 ): CreationCuration {
   assertCreationCommitted(libraryRoot, creationId);
@@ -353,16 +357,31 @@ export function updateCreationCuration(
       actualEntityRevision: current.entityRevision,
     });
   }
+  if (patch.providerPreference) {
+    assertProviderPreference(patch.providerPreference);
+  }
   const next: CreationCuration = {
     ...current,
     ...patch,
     tags: patch.tags ? normalizeTags(patch.tags) : current.tags,
+    providerPreference: patch.providerPreference ?? current.providerPreference ?? [],
     entityRevision: current.entityRevision + 1,
     updatedAt: adapters.now(),
   };
   assertRecordSchema("creationCuration", next, `curation/creations/${creationId}.json`);
   writeJsonAtomic(path, next);
   return next;
+}
+
+export function readCreationCuration(libraryRoot: string, creationId: string): CreationCuration {
+  assertCreationCommitted(libraryRoot, creationId);
+  const relativePath = `curation/creations/${creationId}.json`;
+  const curation = readJson(resolveManagedPath(libraryRoot, relativePath)) as CreationCuration;
+  assertRecordSchema("creationCuration", curation, relativePath);
+  return {
+    ...curation,
+    providerPreference: curation.providerPreference ?? [],
+  };
 }
 
 export function updateImageCuration(

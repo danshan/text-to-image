@@ -63,6 +63,48 @@ MVP 不支持:
 11. Prepare 归档的 effective Prompt 与传入 built-in tool 的 Prompt 必须 UTF-8 byte-identical, 并在 invocation marker 前通过 SHA-256 gate.
 12. Workflow telemetry 是可丢弃诊断数据, 不属于 Archive, 其失败不得影响 Generation terminal status 或 commit.
 
+## Confirmed Multi-provider Contract
+
+本节记录 Phase 19 已确认并实现的 multi-provider runtime 边界. 只有代码、Schema、Skill、测试与交叉文档全部通过验证后, 才能把本设计状态恢复为 `accepted`.
+
+- 一次 Generation 只调用一个 Image Provider. 同一次用户请求选择多个 provider 时, 直接创建多个 Generation, 不增加 `Generation Group` 或其他聚合实体.
+- Generation 显式保存稳定 provider ID 与实际 Image Model identity. `xAI` 是 provider, `Grok Imagine` 是 model; 未知 model 保持未知, 不从 provider 或 tool name 推断.
+- 同一个 Generation Variant 向多个 provider fan-out 时, 对应 Generation 共享一个 Prompt Revision 和同一组 Reference Image, 以保证 provider 接收 byte-identical effective Prompt 和相同输入关系. 多个 Variant 分别创建 Prompt Revision, 不共享 Generation lifecycle.
+- 每个 Creation 保存可变 Provider Preference. 未明确 provider 时, Skill 以该偏好预选一个或多个 provider, 但仍要求用户确认; 当前指令已明确 provider 时不重复询问并更新偏好.
+- 调用任何 provider 前, Workflow 必须完成所有已选 provider 的 capability、credential、Prompt、Reference 与 transaction preflight. 任一前置检查失败时不得调用任何 provider.
+- 全部前置检查成功后并发调用已选 provider. 每个 Generation 在对应 provider 返回后立即独立 finalize 和 commit, 不等待其他 provider; 一个调用失败、超时或被 Safety Rejection 时, 不取消其他已开始的调用.
+- Multi-provider 请求没有聚合终态. Workflow 分别报告每个 Generation 的 `succeeded`, `failed` 或 `interrupted` 状态.
+- xAI adapter 在没有 Reference Image 时调用 text-to-image generation endpoint, 在存在一至三张 Reference Image 时调用 multi-reference edit endpoint. Endpoint 的 `edit` 命名不改变本项目的 Generation 领域语义.
+- xAI Reference 输入使用已提交 Image Asset 的本地 bytes, 不创建 public URL 或长期 provider file. Adapter 按 Reference 的稳定顺序映射 provider image index, 并保留 roles 与 guidance 对 effective Prompt 的约束.
+- xAI 当前最多接受三张 Reference Image. 超限时 capability preflight 失败; multi-provider 请求因此不得调用任何已选 provider, 直到用户减少 Reference 或取消 xAI.
+- 普通生成只要求用户选择 Image Provider, 不要求每次选择 Image Model. 每个 provider adapter 必须解析一个显式配置的默认 model; 用户可以在当前请求中提供通过 capability validation 的高级 model override.
+- xAI 调用必须发送已冻结的具体 model ID, 并在 Generation 中保存实际请求或 provider 明确返回的 model identity. 不依赖 provider API 的隐式默认值. Codex built-in tool 未暴露 model 时保持 `null`, 不从 provider 或 tool name 推断.
+- xAI adapter 始终使用 `n = 1`. 用户请求的 variant count 展开为 `provider count × variant count` 个 Generation; 每个 Variant 对每个 provider 创建一次调用. 单个 Generation Schema 继续允许多个实际 Outputs, 但 Workflow 不使用 provider batch 参数合并用户请求的 Variant.
+- Multi-provider 调度使用独立 provider lane. 不同 provider lane 并发运行; 首期同一 provider 最多一个 in-flight Generation, Variant 在该 lane 内串行执行. 一个 lane 的失败不阻塞其他 lane, 未来只有在明确配置 bounded `maxConcurrency` 后才能提高单 provider 并发度.
+- 排队中的 Variant 不得提前写入 `invocation_started`. Workflow 只在对应 provider 调用即将开始且 Prompt hash gate 通过后标记 invocation, 使 crash recovery 只把真实可能已发出的调用归类为 uncertain outcome.
+- Replay 固定使用源 Generation 的 provider 与全部已知 model fields, 不重新询问 provider, 不自动 fallback. 源 provider 当前 unavailable 时 fail closed.
+- 使用同一 Prompt Revision 改由其他 provider 生成属于新的 Generation Variant, 进入正常 provider 选择流程并更新 Creation 的 Provider Preference; 它不设置 `replayOfGenerationId`.
+- Format `1` 的 Generation Schema 以 optional 字段增加 provider provenance, 不重写既有 immutable records. 新 writer 必须显式写入 provider ID; legacy record 可以继续缺失.
+- Read model 只允许通过严格 legacy tool allowlist 派生 provider 展示. `image_gen.imagegen` 派生为 `openai` 并标记 `legacy-derived`; 未知 tool 保持 unknown. 新记录标记为 `recorded`, 使 UI 不把派生事实伪装成 Archive 原始字段.
+- 所有 Image Provider 实现统一 provider contract, 至少提供 capability check、invocation plan、normalized result 与 executor kind. Contract 允许 `codex_builtin`, `direct_api` 和未来的 host executor, 不要求所有 provider 共享一种 transport.
+- OpenAI provider 继续由 Skill 调用 Codex built-in `image_gen.imagegen`, 项目不管理 OpenAI API key. xAI provider 由仓库内 adapter 通过 direct API 调用. 两者共享 preflight、Prompt hash、transaction、capture、finalize 与 recovery 语义; Archive writer 不依赖具体 SDK、HTTP endpoint 或 host.
+- xAI credential 只允许从 `XAI_API_KEY` 解析. Provider preflight 和 invocation 优先读取当前 process environment, 未设置时读取 repository root 的 ignored `.env`; 其他 `assetctl` command 不因此加载 `.env`.
+- API key 不得通过 CLI argv、Prompt、Codex 对话或 JSON config 传入, 也不得进入 Generation、transaction、telemetry、stdout、日志或用户错误详情. `.env.example` 只保存空占位. 缺少 credential 时 xAI capability 为 unavailable, 不影响 Codex built-in OpenAI provider.
+- xAI direct executor 使用单个 repository-owned 高层 command 完成 `invocation_started`、API call、Output validation、Capture、Finalize、Commit Marker 发布与 incremental index catch-up. Skill 不运行 `curl`, 不接触 credential、raw provider response、base64 payload或临时 provider URL, 只接收 bounded normalized result.
+- xAI 请求固定使用 `response_format: "b64_json"`. Adapter 在受控进程内逐个解码并通过共享图片检查器验证 media type、尺寸与 content hash, 再通过共享 Archive writer 写入当前 transaction staging. Base64 payload 不进入 stdin、stdout、telemetry 或临时脚本.
+- xAI command 在 `invocation_started` 后中断时保留现有 recovery state. 已捕获 Output 可以从 `outputs_captured` 继续 finalize; 未获得可验证 Output 时保持 uncertain outcome, 不伪造 success 或再次调用 provider.
+- xAI direct invocation 的默认 timeout 为十分钟, 只覆盖 provider HTTP span. Repository-local non-secret config 可以按 provider 覆盖, 首期限制为一至三十分钟.
+- 明确的 HTTP `4xx`、`5xx` 与 provider Safety Rejection 是 `failed`, `outcomeKnown: true`; 其中 rate limit 和 server failure 可以标记 retryable, 但 Workflow 不自动 retry. 请求发出后的 client timeout、connection reset、response truncation, 以及缺少完整可验证 Output 的 `200` response 是 `interrupted`, `outcomeKnown: false`.
+- Provider failure 不触发 fallback 或取消其他已开始的 lane. 用户显式 retry 创建新的 Generation. 等待超过六十秒只报告 provider 与累计时间 heartbeat, 不生成百分比或 ETA.
+- Web Generation Detail 显示 Provider、Model、Tool、Parameters 与 `recorded | legacy-derived` provenance source. Creation Timeline 使用紧凑 provider/model badge, Image Detail 在每条 produced-by Generation relation 上显示相同事实.
+- Gallery query 增加 provider filter, model filter 继续使用实际 model identity. Gallery Image Card 不显示单一 provider badge, 因为一个 content-addressed Image Asset 可能具有多个 Output provenance. Legacy 和 unknown facts 必须明确标识, 不用当前默认 model 回填历史.
+- Provider non-secret defaults 位于 tracked `text-to-image.config.json`, ignored `text-to-image.local.json` 可以覆盖. Model resolution precedence 为 current request override、local config、tracked config; 不使用 code-level implicit model fallback.
+- Provider config 只接受代码中已注册的 adapter ID 与 bounded fields, 首期包括 `enabled`, `defaultModel` 和 `timeoutSeconds`. 未知 provider 或 field 是配置错误. Credential 不进入 JSON; Creation Provider Preference 保存在 Asset Library 的 mutable Creation metadata 中.
+- Generation Archive 只保存 bounded provider provenance、实际 model、tool identity、输出相关 normalized parameters、status 与 normalized error. 不保存 provider request ID、API URL、response transport、cost、raw usage 或 raw provider metadata.
+- 未来如需费用管理, 使用独立 optional Usage Record 或外部 billing projection, 不把 provider billing payload 塞入 Generation `tool.parameters`.
+- 本期只实现 `openai` Codex built-in adapter 与 `xai` direct API adapter. Provider registry、adapter contract、executor kind 与 unknown-provider read model handling 保持通用, 但不实现 `google` adapter、Antigravity capability detection、Google credential、config placeholder 或 UI entry.
+- Deterministic CI 使用 fake provider 与 mock xAI HTTP server. 真实 xAI smoke 是 opt-in external-cost test, 只有 `XAI_API_KEY` 存在且用户明确授权时执行, 不属于默认 CI gate. 真实 provider latency 只记录 observation, 不作为 deterministic pass/fail.
+
 ## Inputs
 
 Skill 接受:

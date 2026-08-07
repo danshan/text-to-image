@@ -441,6 +441,41 @@
   - 首次 Phase 18 多进程测试有 3 个 fixture failure: pending Promise 未保持 holder process 存活、guard 在 lock release 后清理产生 false overlap、一个断言错误要求 optional field 等于 `undefined`; 使用真实 timer handle、pre-release cleanup 与正确断言后 3 tests passed.
   - Focused integration 在默认 sandbox 内的既有 client-abort test 无法绑定 loopback listener; scoped outside-sandbox 同命令重跑后 4 files / 30 tests passed.
 
+### Phase 19: Multi-provider Image Generation
+
+- **Status:** completed
+- 已完成:
+  - 使用 `$grill-with-docs`, `grilling` 与 `domain-modeling` 逐项确认 16 项 multi-provider contract.
+  - 使用 Context7 核对 xAI image generation、multi-reference edit、`b64_json`、model、resolution 与 output count API capability.
+  - 在 `CONTEXT.md` 定义 Image Provider、Image Model、Provider Preference 与 Generation Variant, 并收紧 Generation 与 Prompt Revision 关系.
+  - 新增 ADR 0014, 记录 provider-scoped Generation、heterogeneous executor、共享 Revision checkpoint 和 legacy compatibility 决策.
+  - 更新 Generation Workflow、产品需求、Web UI 与任务计划, 固化 xAI direct executor、provider lane、timeout、secret、Replay、metadata 和未来 Google AI 边界.
+  - 实现 optional Generation provider provenance、Creation Provider Preference Schema 与 writer validation.
+  - 实现 tracked/local provider config 字段级 merge, 并保证 Library selection 不覆盖 local provider overrides.
+  - 实现共享 Prompt Revision checkpoint 与 provider-scoped Generation transaction 的 `beginGenerationVariant` / `generation begin-variant` contract.
+  - 新增 Phase 19 Archive focused tests, 覆盖共享 Revision、Provider Preference、配置与 model precedence、mock xAI HTTP success、Reference edit transport、credential pre-mark failure、known failure 与 interrupted normalization, 7 tests passed.
+  - 实现 Provider Preference revision guard、provider capability preflight、read-model/API provenance、relation-correct Gallery provider filter, 以及 Generation、Creation Timeline 与 Image Detail provider/model 展示.
+  - 把 OpenAI 与 xAI 注册为统一 Provider Adapter descriptor, 由 executor kind 分派 Codex built-in 与 direct API; future host executor 不进入 Archive writer.
+  - 更新 repository Skill、CLI contract、recovery、evals、用户手册、开发指南与测试策略, 并增加 mock xAI HTTP server 和 Reference edit transport 覆盖.
+- 当前状态:
+  - 所有逐项核心决策均已获得用户确认.
+  - 用户已最终确认达到 shared understanding.
+  - 用户已明确要求开始实现; Archive、CLI、read-model、API、Web、repository Skill 与正式文档已落地.
+- 验证:
+  - `npm run format:check`: passed.
+  - `npm run lint`: passed.
+  - `npm run typecheck`: passed.
+  - `npm run build`: passed.
+  - `npm test`: passed, Domain 19 tests, repository unit/Hook/Skill 32 tests, Web 27 tests.
+  - `npm run test:integration`: passed, 10 files / 73 tests.
+  - `npm run test:performance`: passed, 2 files / 3 tests; release-scale rebuild 14.196 seconds, warm query p95 50.3 ms.
+  - `npm run test:e2e`: passed, Chromium 与 WebKit 17 passed / 1 intentional skip.
+  - `npm run fixtures:validate`: passed.
+  - `npm run assetctl -- providers list --format json`: passed; OpenAI reported available, xAI reported configured but unavailable with `IMAGE_PROVIDER_AUTH_MISSING`, and no secret was exposed.
+  - `npm run docs:check`: passed, validated 37 Markdown files and 14 ADRs.
+  - `git diff --check`: passed.
+  - 真实 xAI smoke 未运行; 它保持 explicit opt-in external-cost test.
+
 ### Phase 17 Follow-up: Reference Lifecycle and Purge Confirmation
 
 - 已确认:

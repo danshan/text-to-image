@@ -151,6 +151,7 @@ describe("Purge verified replacement", () => {
       prompt: "Use the reference.",
       changeInstruction: "",
       references: [{ assetSha256: asset.assetSha256, roles: ["subject"] }],
+      provider: "openai",
       tool: { name: "image_gen.imagegen", model: null, parameters: {} },
     });
     markInvocationStarted(libraryRoot, prepared.transactionId);

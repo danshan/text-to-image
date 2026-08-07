@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import {
   ArchiveError,
+  assertImageProviderId,
   assertReferenceImages,
   assertGenerationError,
   type GenerationErrorRecord,
@@ -23,9 +24,12 @@ import {
 import {
   assertCreationCommitted,
   assertRevisionCommitted,
+  checkpointRevision,
   findAssetRelativePath,
   importImageAsset,
+  readCreationCuration,
   readDraft,
+  updateCreationCuration,
   updateDraft,
   type ImportAssetResult,
 } from "./writer.js";
@@ -39,11 +43,44 @@ export interface PrepareGenerationRequest {
   basedOnRevisionId?: string | null;
   references: ReferenceImage[];
   replayOfGenerationId?: string | null;
+  provider: string;
   tool: {
     name: string;
     model: string | null;
     parameters: Record<string, unknown>;
   };
+}
+
+export interface PrepareGenerationForRevisionRequest {
+  revisionId: string;
+  promptSha256: string;
+  draftContentSha256: string;
+  references: ReferenceImage[];
+  replayOfGenerationId?: string | null;
+  provider: string;
+  tool: PrepareGenerationRequest["tool"];
+}
+
+export interface BeginGenerationVariantRequest {
+  prompt: string;
+  changeInstruction: string;
+  basedOnRevisionId?: string | null;
+  references: ReferenceImage[];
+  sessionImages?: BeginGenerationRequest["sessionImages"];
+  expectedCurationRevision: number;
+  invocations: Array<{
+    provider: string;
+    tool: PrepareGenerationRequest["tool"];
+  }>;
+}
+
+export interface BeginGenerationVariantResult {
+  revisionId: string;
+  revisionTransactionId: string;
+  promptSha256: string;
+  referencePaths: string[];
+  sessionImages: Array<ImportAssetResult & { sourceIndex: number }>;
+  generations: Array<PrepareGenerationResult & { provider: string }>;
 }
 
 export interface PrepareGenerationResult {
@@ -69,6 +106,7 @@ export interface GenerationPreflightRequest {
   sessionImagePaths?: string[];
   references?: ReferenceImage[];
   basedOnRevisionId?: string | null;
+  providers?: string[];
 }
 
 export interface GenerationPreflightResult {
@@ -78,6 +116,10 @@ export interface GenerationPreflightResult {
     generationWorkflowVersion: 1;
   };
   creationId: string;
+  creationCuration: {
+    entityRevision: number;
+    providerPreference: string[];
+  };
   quickValidation: { valid: true; mode: "quick" };
   draft: {
     content: string;
@@ -97,6 +139,18 @@ export interface CaptureGenerationResult extends GenerationOutput {
   relativePath: string;
   stagedPath: string;
   stagedOutputPath: string;
+}
+
+export interface PreparedGenerationInvocation {
+  transactionId: string;
+  creationId: string;
+  revisionId: string;
+  generationId: string;
+  provider: string;
+  prompt: string;
+  promptSha256: string;
+  references: Array<ReferenceImage & { path: string }>;
+  tool: PrepareGenerationRequest["tool"];
 }
 
 export interface FinalizeGenerationRequest {
@@ -134,6 +188,7 @@ export function prepareGeneration(
 ): PrepareGenerationResult {
   assertCreationCommitted(libraryRoot, creationId);
   assertReferenceImages(request.references);
+  assertImageProviderId(request.provider);
   if (!request.prompt.trim()) {
     throw new ArchiveError("ARCHIVE_SCHEMA_INVALID", "Effective Prompt must not be empty.");
   }
@@ -148,6 +203,7 @@ export function prepareGeneration(
   }
   if (request.replayOfGenerationId) {
     assertGenerationCommitted(libraryRoot, creationId, request.replayOfGenerationId);
+    validateReplayProvider(libraryRoot, creationId, request);
   }
   const referencePaths = request.references.map((reference) => {
     const relativePath = findAssetRelativePath(libraryRoot, reference.assetSha256);
@@ -178,6 +234,7 @@ export function prepareGeneration(
         changeInstruction: request.changeInstruction,
         references: request.references,
         replayOfGenerationId: request.replayOfGenerationId ?? null,
+        provider: request.provider,
         tool: request.tool,
         outputs: [],
         startedAt: null,
@@ -217,6 +274,156 @@ export function prepareGeneration(
     generationId,
     promptSha256: revision.promptSha256,
     referencePaths,
+  };
+}
+
+export function prepareGenerationForRevision(
+  libraryRoot: string,
+  creationId: string,
+  request: PrepareGenerationForRevisionRequest,
+  options: TransactionOptions = {},
+): PrepareGenerationResult {
+  assertCreationCommitted(libraryRoot, creationId);
+  assertRevisionCommitted(libraryRoot, creationId, request.revisionId);
+  assertReferenceImages(request.references);
+  assertImageProviderId(request.provider);
+  validateReplayProvider(libraryRoot, creationId, request);
+  const referencePaths = resolveReferencePaths(libraryRoot, request.references);
+  const promptPath = resolveManagedPath(
+    libraryRoot,
+    `creations/${creationId}/revisions/${request.revisionId}/prompt.md`,
+  );
+  const actualPromptSha256 = sha256Bytes(readFileSync(promptPath));
+  if (actualPromptSha256 !== request.promptSha256) {
+    throw new ArchiveError(
+      "PROMPT_HASH_MISMATCH",
+      "Committed Prompt Revision does not match the requested invocation digest.",
+      { expectedSha256: request.promptSha256, actualSha256: actualPromptSha256 },
+    );
+  }
+  const adapters = options.adapters ?? defaultRuntimeAdapters;
+  const generationId = adapters.uuid();
+  const transaction = createTransaction(
+    libraryRoot,
+    {
+      operation: "generation",
+      creationId,
+      revisionId: request.revisionId,
+      generationId,
+      draftContentSha256: request.draftContentSha256,
+      request: {
+        promptSha256: request.promptSha256,
+        references: request.references,
+        replayOfGenerationId: request.replayOfGenerationId ?? null,
+        provider: request.provider,
+        tool: request.tool,
+        outputs: [],
+        startedAt: null,
+      },
+    },
+    options,
+  );
+  return {
+    transactionId: transaction.id,
+    revisionId: request.revisionId,
+    generationId,
+    promptSha256: request.promptSha256,
+    referencePaths,
+  };
+}
+
+export function beginGenerationVariant(
+  libraryRoot: string,
+  creationId: string,
+  request: BeginGenerationVariantRequest,
+  options: TransactionOptions = {},
+): BeginGenerationVariantResult {
+  assertCreationCommitted(libraryRoot, creationId);
+  assertReferenceImages(request.references);
+  if (!request.prompt.trim()) {
+    throw new ArchiveError("ARCHIVE_SCHEMA_INVALID", "Effective Prompt must not be empty.");
+  }
+  if (request.invocations.length === 0) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation Variant requires at least one provider invocation.",
+    );
+  }
+  const providers = request.invocations.map((invocation) => invocation.provider);
+  providers.forEach(assertImageProviderId);
+  if (new Set(providers).size !== providers.length) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation Variant provider invocations must be unique.",
+    );
+  }
+  updateCreationCuration(
+    libraryRoot,
+    creationId,
+    request.expectedCurationRevision,
+    { providerPreference: providers },
+    options.adapters ?? defaultRuntimeAdapters,
+  );
+  const draft = readDraft(libraryRoot, creationId);
+  const parentRevisionId = request.basedOnRevisionId ?? draft.metadata.basedOnRevisionId;
+  if (parentRevisionId) {
+    assertRevisionCommitted(libraryRoot, creationId, parentRevisionId);
+  }
+  const referencedAssets = new Set(request.references.map((reference) => reference.assetSha256));
+  for (const sessionImage of request.sessionImages ?? []) {
+    if (!referencedAssets.has(sessionImage.expectedAssetSha256)) {
+      throw new ArchiveError(
+        "ARCHIVE_SCHEMA_INVALID",
+        "Every Session Image must be present in the Generation references.",
+        { expectedAssetSha256: sessionImage.expectedAssetSha256 },
+      );
+    }
+  }
+  const sessionImages = (request.sessionImages ?? []).map((sessionImage, sourceIndex) => {
+    const imported = importImageAsset(libraryRoot, sessionImage.sourcePath, options);
+    if (imported.assetSha256 !== sessionImage.expectedAssetSha256) {
+      throw new ArchiveError("SESSION_IMAGE_CHANGED", "Session Image changed after Preflight.", {
+        sourceIndex,
+        expectedAssetSha256: sessionImage.expectedAssetSha256,
+        actualAssetSha256: imported.assetSha256,
+      });
+    }
+    return { sourceIndex, ...imported };
+  });
+  const checkpoint = checkpointRevision(
+    libraryRoot,
+    creationId,
+    {
+      prompt: request.prompt,
+      changeInstruction: request.changeInstruction,
+      parentRevisionId,
+    },
+    options,
+  );
+  const promptSha256 = checkpoint.revision.promptSha256;
+  const generations = request.invocations.map((invocation) => ({
+    ...prepareGenerationForRevision(
+      libraryRoot,
+      creationId,
+      {
+        revisionId: checkpoint.revision.id,
+        promptSha256,
+        draftContentSha256: draft.contentSha256,
+        references: request.references,
+        provider: invocation.provider,
+        tool: invocation.tool,
+      },
+      options,
+    ),
+    provider: invocation.provider,
+  }));
+  return {
+    revisionId: checkpoint.revision.id,
+    revisionTransactionId: checkpoint.transactionId,
+    promptSha256,
+    referencePaths: resolveReferencePaths(libraryRoot, request.references),
+    sessionImages,
+    generations,
   };
 }
 
@@ -267,6 +474,15 @@ export function preflightGeneration(
   if (request.basedOnRevisionId) {
     assertRevisionCommitted(libraryRoot, creationId, request.basedOnRevisionId);
   }
+  if (request.providers) {
+    request.providers.forEach(assertImageProviderId);
+    if (new Set(request.providers).size !== request.providers.length) {
+      throw new ArchiveError(
+        "ARCHIVE_SCHEMA_INVALID",
+        "Generation Preflight providers must be unique.",
+      );
+    }
+  }
   if (request.references) {
     assertReferenceImages(request.references);
     for (const reference of request.references) {
@@ -282,6 +498,7 @@ export function preflightGeneration(
     }
   }
   const draft = readDraft(libraryRoot, creationId);
+  const curation = readCreationCuration(libraryRoot, creationId);
   const pending = listRecoveryTransactions(libraryRoot);
   const sessionImages = (request.sessionImagePaths ?? []).map((sourcePath) =>
     inspectImageSource(sourcePath),
@@ -290,6 +507,10 @@ export function preflightGeneration(
     libraryRoot,
     capabilities: { libraryFormat: 1, generationWorkflowVersion: 1 },
     creationId,
+    creationCuration: {
+      entityRevision: curation.entityRevision,
+      providerPreference: curation.providerPreference ?? [],
+    },
     quickValidation: { valid: true, mode: "quick" },
     draft,
     recovery: { pending, warning: pending.length > 0 },
@@ -320,25 +541,30 @@ export function assertPreparedPromptHash(
   const promptRecord = transaction.stagedRecords.find(
     (record) => record.kind === "prompt" && record.path.endsWith("/prompt.md"),
   );
-  if (!promptRecord) {
-    throw new ArchiveError("ARCHIVE_CORRUPTION", "Generation transaction has no staged Prompt.", {
-      transactionId,
-    });
-  }
-  const promptBytes = readFileSync(
-    stagedRecordPathForPrompt(libraryRoot, transactionId, promptRecord.path),
-  );
+  const promptBytes = promptRecord
+    ? readFileSync(stagedRecordPathForPrompt(libraryRoot, transactionId, promptRecord.path))
+    : readFileSync(
+        resolveManagedPath(
+          libraryRoot,
+          `creations/${transaction.creationId}/revisions/${transaction.revisionId}/prompt.md`,
+        ),
+      );
   const actualSha256 = sha256Bytes(promptBytes);
   const storedSha256 = transaction.request.promptSha256;
   if (
     actualSha256 !== expectedSha256 ||
-    actualSha256 !== promptRecord.sha256 ||
+    (promptRecord !== undefined && actualSha256 !== promptRecord.sha256) ||
     (typeof storedSha256 === "string" && storedSha256 !== expectedSha256)
   ) {
     throw new ArchiveError(
       "PROMPT_HASH_MISMATCH",
       "Prepared Prompt bytes do not match the invocation SHA-256 gate.",
-      { expectedSha256, actualSha256, stagedSha256: promptRecord.sha256, storedSha256 },
+      {
+        expectedSha256,
+        actualSha256,
+        stagedSha256: promptRecord?.sha256 ?? null,
+        storedSha256,
+      },
     );
   }
 }
@@ -373,6 +599,22 @@ export function captureGenerationOutput(
   sourcePath: string,
   options: TransactionOptions = {},
 ): CaptureGenerationResult {
+  return captureGenerationOutputBytes(
+    libraryRoot,
+    transactionId,
+    readFileSync(sourcePath),
+    sourcePath,
+    options,
+  );
+}
+
+export function captureGenerationOutputBytes(
+  libraryRoot: string,
+  transactionId: string,
+  bytes: Buffer,
+  sourceLabel = "provider-output",
+  options: TransactionOptions = {},
+): CaptureGenerationResult {
   let transaction = readTransaction(libraryRoot, transactionId);
   assertGenerationTransaction(transaction.operation, transactionId);
   if (transaction.state !== "invocation_started" && transaction.state !== "outputs_captured") {
@@ -382,8 +624,7 @@ export function captureGenerationOutput(
       { transactionId, state: transaction.state },
     );
   }
-  const bytes = readFileSync(sourcePath);
-  const inspection = inspectImage(bytes, sourcePath);
+  const inspection = inspectImage(bytes, sourceLabel);
   const assetSha256 = sha256Bytes(bytes);
   const relativePath = `assets/sha256/${assetSha256.slice(0, 2)}/${assetSha256}.${inspection.extension}`;
   stageRecordBytes(libraryRoot, transactionId, "image_asset", relativePath, bytes, options);
@@ -413,6 +654,54 @@ export function captureGenerationOutput(
     relativePath,
     stagedPath,
     stagedOutputPath: stagedPath,
+  };
+}
+
+export function readPreparedGenerationInvocation(
+  libraryRoot: string,
+  transactionId: string,
+): PreparedGenerationInvocation {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  assertGenerationTransaction(transaction.operation, transactionId);
+  if (transaction.state !== "prepared") {
+    throw new ArchiveError(
+      "TRANSACTION_INVALID_STATE",
+      "Provider invocation can only start from a prepared Generation transaction.",
+      { transactionId, state: transaction.state },
+    );
+  }
+  if (!transaction.creationId || !transaction.revisionId || !transaction.generationId) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Generation transaction is missing identity fields.",
+      { transactionId },
+    );
+  }
+  const promptPath = resolveManagedPath(
+    libraryRoot,
+    `creations/${transaction.creationId}/revisions/${transaction.revisionId}/prompt.md`,
+  );
+  const promptBytes = readFileSync(promptPath);
+  const promptSha256 = sha256Bytes(promptBytes);
+  if (promptSha256 !== transaction.request.promptSha256) {
+    throw new ArchiveError(
+      "PROMPT_HASH_MISMATCH",
+      "Committed Prompt Revision does not match the prepared Generation transaction.",
+      { transactionId, promptSha256 },
+    );
+  }
+  const references = readReferences(transaction.request.references);
+  const paths = resolveReferencePaths(libraryRoot, references);
+  return {
+    transactionId,
+    creationId: transaction.creationId,
+    revisionId: transaction.revisionId,
+    generationId: transaction.generationId,
+    provider: readProvider(transaction.request.provider),
+    prompt: promptBytes.toString("utf8"),
+    promptSha256,
+    references: references.map((reference, index) => ({ ...reference, path: paths[index]! })),
+    tool: readTool(transaction.request.tool),
   };
 }
 
@@ -614,6 +903,7 @@ function finalizeGeneration(
     );
   }
   const references = readReferences(transaction.request.references);
+  const provider = readProvider(transaction.request.provider);
   const configuredTool = readTool(transaction.request.tool);
   const startedAt = transaction.request.startedAt;
   if (typeof startedAt !== "string") {
@@ -636,6 +926,7 @@ function finalizeGeneration(
     outcomeKnown: result.outcomeKnown,
     references,
     outputs: result.outputs,
+    provider,
     tool: {
       name: configuredTool.name,
       model: result.toolResult?.model ?? configuredTool.model,
@@ -719,6 +1010,57 @@ function readTool(value: unknown): PrepareGenerationRequest["tool"] {
     );
   }
   return value as PrepareGenerationRequest["tool"];
+}
+
+function readProvider(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new ArchiveError("ARCHIVE_SCHEMA_INVALID", "Generation transaction provider is missing.");
+  }
+  assertImageProviderId(value);
+  return value;
+}
+
+function resolveReferencePaths(libraryRoot: string, references: ReferenceImage[]): string[] {
+  return references.map((reference) => {
+    const relativePath = findAssetRelativePath(libraryRoot, reference.assetSha256);
+    const absolutePath = resolveManagedPath(libraryRoot, relativePath);
+    if (sha256Bytes(readFileSync(absolutePath)) !== reference.assetSha256) {
+      throw new ArchiveError(
+        "ARCHIVE_HASH_MISMATCH",
+        "Reference Image payload does not match its content identity.",
+        { assetSha256: reference.assetSha256 },
+      );
+    }
+    return absolutePath;
+  });
+}
+
+function validateReplayProvider(
+  libraryRoot: string,
+  creationId: string,
+  request: Pick<PrepareGenerationForRevisionRequest, "replayOfGenerationId" | "provider" | "tool">,
+): void {
+  if (!request.replayOfGenerationId) return;
+  const generationPath = resolveManagedPath(
+    libraryRoot,
+    `creations/${creationId}/generations/${request.replayOfGenerationId}/generation.json`,
+  );
+  assertGenerationCommitted(libraryRoot, creationId, request.replayOfGenerationId);
+  const source = readJson(generationPath) as GenerationRecord;
+  const sourceProvider =
+    source.provider ?? (source.tool.name === "image_gen.imagegen" ? "openai" : null);
+  if (sourceProvider !== request.provider || source.tool.model !== request.tool.model) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Replay must preserve the source provider and model.",
+      {
+        sourceProvider,
+        requestedProvider: request.provider,
+        sourceModel: source.tool.model,
+        requestedModel: request.tool.model,
+      },
+    );
+  }
 }
 
 function stagedRecordPathForPrompt(

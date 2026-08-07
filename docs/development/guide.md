@@ -170,6 +170,9 @@ npm run assetctl -- asset inspect --library ./library --source /path/to/referenc
 npm run assetctl -- asset import --library ./library --source /path/to/reference.jpg --format json
 npm run assetctl -- validate --library ./library
 npm run assetctl -- capabilities --format json
+npm run assetctl -- providers list --format json
+npm run assetctl -- generation begin-variant --creation <creation-id> --request-stdin --format json
+npm run assetctl -- generation invoke-provider --provider xai --transaction <transaction-id> --format json
 npm run assetctl -- index rebuild --library ./library
 npm run assetctl -- recover list --library ./library
 npm run assetctl -- purge creation prepare --creation <creation-id> --library ./library --format json
@@ -216,15 +219,30 @@ Tracked `text-to-image.config.json`:
 
 ```json
 {
-  "library": "./library"
+  "library": "./library",
+  "providers": {
+    "openai": {
+      "enabled": true
+    },
+    "xai": {
+      "enabled": true,
+      "defaultModel": "grok-imagine-image-quality",
+      "timeoutSeconds": 600
+    }
+  }
 }
 ```
 
-Ignored `text-to-image.local.json` 可以保存仓库外路径:
+Ignored `text-to-image.local.json` 可以保存仓库外路径, 也可以按字段覆盖 non-secret Provider config:
 
 ```json
 {
-  "library": "/Volumes/Media/TextToImageLibrary"
+  "library": "/Volumes/Media/TextToImageLibrary",
+  "providers": {
+    "xai": {
+      "timeoutSeconds": 900
+    }
+  }
 }
 ```
 
@@ -233,6 +251,8 @@ CLI `--library` 优先级最高. 相对路径按 Git root 解析. 配置 parser 
 Generation Skill 在一次工作流开始时保存 resolver 返回的 canonical Library root, 后续 inspection、import、prepare、capture、commit 与 recovery 命令全部显式使用同一路径. 不得在中途重新解析 Library 或复用前一会话的旧 path.
 
 `asset inspect` 是 Session Image ingress 的只读 preflight. 它不要求 source 位于 Library 内, 不修改 source, 也不创建 Archive transaction. `asset import` 必须在全部 source inspection 成功后执行, 并重新读取 source 以防 inspection 与 import 之间发生变化.
+
+Provider config 只允许已注册 adapter 的 `enabled`, `defaultModel` 与 `timeoutSeconds`. Timeout 范围为 60–1800 秒. Request model override 优先于 local config, local config 优先于 tracked config. `XAI_API_KEY` 不能写入 JSON.
 
 成功执行 CLI `init --library`、`library select --library` 或 Web Library transition 后, shared resolver 把 canonical absolute path 原子写入 Git root 的 `text-to-image.local.json`. 写入失败或 Library validation 失败时保留原配置. Web transition 会在 candidate ready 后排空旧请求、切换 runtime context 并轮换 session token, 无需重启 Server.
 
@@ -243,7 +263,7 @@ npm start -- --host 192.168.1.10
 npm run dev -- --host 0.0.0.0
 ```
 
-root `.env` 是可选且 ignored 的 Server 启动配置. `.env.example` 只提供可复制的变量清单. `npm run dev`、`npm start` 与 `npm run daemon` 自动加载 `.env`; `assetctl`、build、test、lint 与 docs commands 不加载它. precedence 为 CLI 参数、已存在 shell environment、`.env`、mode default.
+root `.env` 是可选且 ignored 的本地 secret 和 Server 启动配置. `.env.example` 只提供可复制的空变量清单. `npm run dev`、`npm start` 与 `npm run daemon` 自动加载 Server fields. `assetctl` 只有 `providers list`, `generation preflight`, `generation begin-variant` 与 `generation invoke-provider` 在需要判断或调用 xAI 时读取 `XAI_API_KEY`; 其他 assetctl、build、test、lint 与 docs commands 不加载该 secret. xAI credential precedence 为 process environment、root `.env`; Provider JSON config 永远不保存 credential.
 
 production-like Server port 默认由 OS 分配 `0`. development Server 与 Web port 分别默认 `4174` 与 `5173`, 可以通过 `TEXT_TO_IMAGE_PORT` 与 `TEXT_TO_IMAGE_DEV_PORT` 覆盖; Vite listener、proxy target 与 Server allowlist 必须使用相同 resolved values.
 
@@ -252,6 +272,7 @@ TEXT_TO_IMAGE_HOST=127.0.0.1
 TEXT_TO_IMAGE_LOG_LEVEL=info
 TEXT_TO_IMAGE_PORT=4174
 TEXT_TO_IMAGE_DEV_PORT=5173
+XAI_API_KEY=
 ```
 
 Wildcard bind 在启动时枚举 usable active interfaces 并输出 concrete URLs. Scoped IPv6 link-local address 因缺少 URL zone 不发布. 服务只接受其余 IP literal 对应的 `Host` 与 `Origin`; interface 变化后需要重启. Non-loopback 模式仅用于 trusted LAN, 不提供 TLS、额外身份认证或公网安全承诺.

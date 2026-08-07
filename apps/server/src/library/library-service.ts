@@ -92,9 +92,11 @@ export class LibraryService {
     const image = this.readModel.getImage(sha256);
     if (!image) throw new NotFoundError("Image Asset", sha256);
     const producing = image.generationId ? this.readModel.getGeneration(image.generationId) : null;
+    const producingGenerations = this.readModel.getProducingGenerations(sha256).map(toGeneration);
     return {
       ...toImageSummary(image),
       producingGeneration: producing ? toGeneration(producing) : null,
+      producingGenerations,
       usedAsReference: this.readModel.getReferenceRelations(sha256).map((relation) => ({
         ...relation,
         roles: relation.roles as ImageDetail["usedAsReference"][number]["roles"],

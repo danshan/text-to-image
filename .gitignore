@@ -1,6 +1,7 @@
 /library/
 /text-to-image.local.json
 /.env
+/.env
 /.runtime/
 **/node_modules/
 **/dist/

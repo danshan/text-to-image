@@ -136,6 +136,25 @@
 - macOS sibling containment 需要比较 parent `realpath`, 否则 `/var` 与 `/private/var` 会被误判为越界.
 - 两次 rename 与 journal 更新之间存在真实 crash window. Recovery 不能只信 phase, 还必须核对 active、candidate 与 retired exact path 的存在组合, 并在 cutover 已开始时 roll forward.
 
+## Phase 19 Multi-provider Generation Findings
+
+- 当前 `Generation` 同时 staging Prompt Revision 与 terminal Generation, 因而每次 `generation begin` 都创建新的 Revision. Multi-provider 独立 commit 与共享 Revision 需要拆分为先行 checkpoint 和 provider-scoped Generation transaction.
+- 当前 CLI 是单文件 command dispatcher, `generation finalize` 已负责 Commit 后 incremental index catch-up; xAI end-to-end executor 可以复用这一 orchestration helper, 但 provider HTTP client 应放在独立 package/module, 避免把 transport 塞入 Archive writer.
+- 当前 Library resolver 把 local config 当作 tracked config 的完全替代, 且只解析 `library`. Provider defaults 需要改为字段级 merge, 同时保持 local `library` selection 的现有 precedence 和 `persistLibrarySelection` 不覆盖已有 local provider overrides.
+- 当前 read model version 为 `1`, `generations` 只有 tool columns. Provider projection 需要升级 rebuildable Schema version, 增加 nullable provider 与 provenance source; legacy `image_gen.imagegen` 只在 rebuild 时通过 exact allowlist 派生.
+- 共享 Revision transaction 可以复用既有 `checkpointRevision`: provider-scoped Generation transaction 只保存 committed Revision ID 与 Prompt SHA-256, Prompt hash gate 在没有 staged Prompt 时读取 committed `prompt.md`. 这保留旧单 Generation primitives, 同时为新 Variant command 提供两阶段路径.
+- `text-to-image.local.json` 必须以字段级方式覆盖 tracked provider config, `persistLibrarySelection` 必须 merge 而不是重写 local file, 否则 Web Library switch 会静默删除 provider overrides.
+- xAI direct executor 可以使用 Node `fetch` 与 `Response.body` bounded reader, 在 transaction 内直接 capture decoded bytes. HTTP response 明确失败时写 known failure; transport 或 payload completeness 无法确认时从 `invocation_started` finalize 为 interrupted, ready-to-commit crash evidence 不应被覆盖.
+- Gallery provider filter 可以复用现有 assets-to-producing-generation join. Generation Detail、Creation Timeline 与 Image produced-by relation 则需要 read model/API 显式投影 provider 和 provenance source, 不能让 Web 根据 tool name 重复推断 legacy provider.
+- xAI 官方文档提供 text-to-image generation endpoint 与最多三张 Reference Image 的 multi-reference edit endpoint. `edit` 是 provider transport naming, 不应改变本项目的 Generation 领域语义.
+- xAI 支持 `b64_json` 与 provider URL. 单次 `n = 1` 下, bounded base64 response 可以避免 expiring URL、第二次下载和远端文件 lifecycle, 更适合 repository-owned end-to-end executor.
+- Codex built-in tool 无法移入 repository HTTP process, 而 xAI credential 不应暴露给 Skill. Provider contract 因此必须统一 capability 与 normalized result, 同时允许 `codex_builtin`, `direct_api` 和未来 host executor.
+- 已有 immutable Generation 缺少 provider. 修改历史 record 会破坏 digest 与 Commit Marker; format `1` 应使用 additive optional field, 并只在 rebuildable read model 中透明标记 legacy-derived provider.
+- xAI API 返回的 cost、request ID 与 raw usage 不是本期 provenance 需求. 把它们写入 Generation 会把 billing evolution 与 provider-specific payload 固化进 immutable Archive.
+- Creation Provider Preference 应在 `generation begin-variant` 内通过 `expectedCurationRevision` 更新. 这样用户确认的选择与随后创建的 provider-scoped transactions 共享同一并发保护, 且 provider capability preflight 仍发生在任何 Archive 写入之前.
+- Gallery 的 Provider filter 不能只依赖 `assets.generation_id`, 因为 content-addressed Output 可能由多个 Generation 复用. 使用 `generation_outputs` 与 `generations` 的 `EXISTS` relation 才能覆盖所有 produced-by provenance.
+- Repository root `.env` 原先未被 `.gitignore` 覆盖. 既然 xAI executor 明确支持该 secret source, 必须新增 exact root ignore rule, 同时保留 `.env.example` 作为无 secret 模板.
+
 ## Research Findings
 
 - Codex 官方手册说明 `AGENTS.md` 是持久仓库指令, 仓库内较近层级覆盖较远层级.

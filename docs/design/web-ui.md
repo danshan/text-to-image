@@ -190,7 +190,7 @@ Filters:
 - generated Output 或 imported Reference source.
 - Reference Image roles.
 - Generation status.
-- tool、model 和 time range.
+- provider、tool、model 和 time range.
 
 Sort:
 
@@ -210,6 +210,8 @@ Query state 编码到 URL. Search input 使用 debounced request, Enter 立即�
 2. Prompt Draft: Markdown editor、external edit warning、based-on Revision 与 optimistic save.
 3. Prompt History: 单父节点 branch tree, 支持选择两个 Revision 查看 diff.
 4. Generation Timeline: 按时间展示 status、Reference Image、Output 与 Replay relation.
+
+每个 Timeline Generation 使用紧凑 badge 显示 provider 与实际 model. Legacy provider 必须同时标记 `legacy-derived`; 未知 model 显示 `Unknown model`, 不使用当前 provider default 回填.
 
 Prompt History 与 Generation Timeline 是同一 provenance 的两个视图, 但不合并为一张 Generation 卡片. Focus 与 Compare 使用独立状态:
 
@@ -258,10 +260,13 @@ Detail 底部提供 Image Asset `Danger Zone`, 这是 Image Asset Purge 的唯�
 - Reference Image thumbnails、roles 与 guidance.
 - Output 顺序与 Image Asset links.
 - built-in tool name、已知 model 和 parameters.
+- Image Provider、实际 Image Model 与 provenance source `recorded | legacy-derived`.
 - Replay source 或 derived Replay links.
 - known failure error code、summary 与 optional moderation metadata, 或 interrupted warning.
 
 Unknown tool fields 显示 `Unknown`, 不显示推测值.
+
+Image Detail 的每条 produced-by Generation relation 显示对应 provider 与 model. Gallery Image Card 不显示单一 provider badge, 因为同一个 content-addressed Image Asset 可以具有多个 Output provenance; provider 比较通过 Generation Timeline、Detail 与 Gallery filter 完成.
 
 Safety Rejection 使用结构化 warning panel, 不直接渲染 raw JSON. Panel 展示 stage 与工具明确暴露的 categories, 并提供 category-level guidance. Guidance 必须标记为修改建议而非已确认触发词; 只有工具未来返回明确 evidence spans 时才允许精确高亮.
 

@@ -20,7 +20,7 @@ test("skill metadata is lean and explicit-only", () => {
 test("workflow preserves the required generation transaction order", () => {
   const orderedMarkers = [
     "generation preflight",
-    "generation begin --library <library-root> --creation <creation-id> --request-stdin",
+    "generation begin-variant --library <library-root> --creation <creation-id> --request-stdin",
     "image_gen.imagegen",
     "generation finalize --library <library-root> --transaction <transaction-id> --result-stdin",
   ];
@@ -41,7 +41,7 @@ test("happy path does not repeat read-only preflight or prompt verification", ()
   assert.doesNotMatch(skill, /asset inspect --library/);
   assert.equal(skill.match(/generation verify-prompt/g)?.length, 1);
   assert.equal(skill.match(/generation prepare/g)?.length, 1);
-  assert.equal(skill.match(/generation mark-invocation-started/g)?.length, 1);
+  assert.equal(skill.match(/generation mark-invocation-started/g)?.length, 2);
 });
 
 test("skill forbids unarchived and automatically retried generation", () => {
@@ -50,6 +50,16 @@ test("skill forbids unarchived and automatically retried generation", () => {
   assert.match(skill, /edit target/);
   assert.match(skill, /argv/);
   assert.match(skill, /Commit Marker/);
+});
+
+test("skill confirms providers and keeps provider generations independent", () => {
+  assert.match(skill, /当前请求未明确平台时, 必须询问用户使用哪个平台/);
+  assert.match(skill, /creationCuration\.providerPreference/);
+  assert.match(skill, /generation begin-variant/);
+  assert.match(skill, /generation invoke-provider/);
+  assert.match(skill, /不引入 Generation Group/);
+  assert.match(skill, /跨 Provider lane 并行/);
+  assert.match(skill, /同一 Provider 的多个 Variant 串行/);
 });
 
 test("skill materializes and imports Session Images before generation", () => {

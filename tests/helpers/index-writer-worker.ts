@@ -3,6 +3,7 @@ import { appendFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ReadModel,
+  READ_MODEL_VERSION,
   catchUpReadModel,
   rebuildReadModel,
   withIndexWriter,
@@ -32,7 +33,7 @@ function currentIndexIsUsable(): boolean {
       { value?: unknown } | undefined;
     const journal = database.prepare("PRAGMA journal_mode").get() as
       { journal_mode?: unknown } | undefined;
-    return schema?.value === "1" && journal?.journal_mode === "delete";
+    return schema?.value === String(READ_MODEL_VERSION) && journal?.journal_mode === "delete";
   } catch {
     return false;
   } finally {

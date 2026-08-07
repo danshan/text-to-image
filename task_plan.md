@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 17
+Phase 19
 
 ## Phases
 
@@ -306,61 +306,105 @@ Phase 17
 7. Replaceable read models use `DELETE` journal mode so atomic replacement never combines a new main file with an old WAL/SHM generation.
 8. Cross-process degradation state is a disposable `.cache/index-degradation.json`; successful catch-up or rebuild clears it, and Server health only exposes bounded diagnostics.
 
+### Phase 19: Multi-provider Image Generation
+
+- [x] 通过 `$grill-with-docs` 逐项确认 multi-provider Generation、provider/model provenance、xAI API、并发、失败、配置、UI 与未来扩展边界.
+- [x] 更新 domain glossary, 新增 ADR 0014, 并把已确认契约写入 Generation Workflow、产品需求与 Web UI 设计.
+- [x] 用户最终确认已达到 shared understanding.
+- [x] 将全部受影响正式文档补全为 implementation-ready contract.
+- [x] 实现 provider Schema、Creation preference、provider registry、xAI direct executor 与 multi-provider orchestration.
+- [x] 实现 read model、API、Web provenance UI 与 Gallery provider filter.
+- [x] 补充 unit、integration、fault injection、Skill eval 与 mock xAI HTTP server; live smoke 保持显式 opt-in, 不在默认验证中执行.
+- [x] 执行 root verification 与文档交叉检查; 保留项目现有 `draft` 文档状态, 因为 Phase 17 的跨文档剩余工作尚未完成.
+- **Status:** completed
+
+#### Confirmed Contract
+
+1. 一次 Generation 只调用一个 Image Provider. Multi-provider 请求直接创建多个独立 Generation, 不增加 Generation Group 或聚合终态.
+2. Generation 分别记录 stable provider ID 与实际 Image Model; `xAI` 是 provider, `Grok Imagine` 是 model.
+3. 同一个 Variant 的 provider fan-out 共享一个先行 checkpoint 的 Prompt Revision 和同一组 Reference Image; 每个 provider Generation 使用独立 transaction、terminal status、recovery 与 commit.
+4. Creation 保存 mutable Provider Preference. 未明确 provider 时以该偏好预选但仍需确认; 当前请求明确 provider 时不重复询问并更新偏好.
+5. 全部 provider preflight 成功后才开始调用. 不同 provider lane 并发, 首期同一 provider 内 Variant 串行; 一个 lane 失败不取消其他已开始的调用.
+6. Variant count 展开为 `provider count × variant count` 个 Generation. xAI 固定 `n = 1`.
+7. OpenAI 继续通过 Codex built-in executor; xAI 通过 repository-owned direct API executor. 通用 adapter contract 允许未来 host executor.
+8. xAI 无 Reference 时调用 generation endpoint, 一至三张 Reference 时调用 multi-reference edit endpoint; 超限在全局 preflight fail closed.
+9. xAI 使用 `b64_json`, 由仓库进程完成 API call、Output validation、Capture、Finalize、Commit 与 index catch-up; secret 和大 payload 不经过 Codex context.
+10. `XAI_API_KEY` resolution 为 process environment、ignored root `.env`; JSON config 只保存 non-secret provider default. Model resolution 为 request override、local config、tracked config.
+11. xAI 默认 timeout 十分钟, 可在一至三十分钟内覆盖. 明确 HTTP response 是 known failure; dispatch 后无法确认结果的 transport failure 是 interrupted. 不自动 retry 或 fallback.
+12. Replay 固定源 provider 与 model; 跨 provider 生成是新的 Variant.
+13. Format `1` 以 optional provider field 向后兼容. 新记录显式保存; legacy `image_gen.imagegen` 只在 read model 中派生为 `openai` 并标记 `legacy-derived`.
+14. Generation 只保存 bounded provenance 和输出相关参数, 不保存 cost、request ID、API URL、raw usage 或 raw provider metadata.
+15. Web 在 Generation Detail、Creation Timeline 与 Image Detail 显示 provider/model, Gallery 增加 provider filter; Image Card 不显示可能误导的单一 provider badge.
+16. 本期只实现 `openai` 与 `xai`; Google AI 与 Antigravity 只保留抽象扩展方向, 不实现 placeholder、credential 或 UI entry.
+
 ## Remaining Design Questions
 
-无. Phase 17 核心 vertical slice 已实现, 当前剩余异步 maintenance progress、完整 phase failpoint、安全故障矩阵与 browser E2E.
+无. Phase 19 已完成实现与 root verification. Phase 17 仍剩余异步 maintenance progress、完整 phase failpoint、安全故障矩阵与 browser E2E.
 
 ## Errors Encountered
 
-| Error                                                                           | Attempt | Resolution                                                         |
-| ------------------------------------------------------------------------------- | ------: | ------------------------------------------------------------------ |
-| Codex manual fetch failed because DNS was unavailable in the sandbox            |       1 | Re-ran the official helper with approved network access            |
-| Existing project Markdown used English prose against repository language rules  |       1 | Rewrote glossary and ADR prose in Simplified Chinese               |
-| Documentation patch had malformed section markers                               |       1 | Split the change into smaller valid patch sections                 |
-| Cross-file documentation patch used the wrong hunk context                      |       1 | Split updates by target file and validated each context            |
-| `tsx` IPC socket was denied by the Codex filesystem sandbox                     |       1 | Re-ran CLI and E2E verification with scoped approval               |
-| Initial dependency audit reported vulnerable static/Sharp versions              |       1 | Upgraded both packages and regenerated the lockfile                |
-| SPA navigation was incorrectly protected before token bootstrap                 |       1 | Limited token enforcement to protected API routes                  |
-| Full-scale FTS query repeatedly evaluated three subqueries                      |       1 | Materialized one FTS hit set and reused it                         |
-| WebKit omitted links from the default macOS Tab focus ring                      |       1 | Split Tab-order and activation checks by browser                   |
-| Server build emitted artifacts into referenced package source directories       |       1 | Removed generated files and corrected project references           |
-| Documentation check traversed dependency and evaluation workspaces              |       1 | Excluded generated and dependency directories                      |
-| Web test used an unavailable `jest-dom` matcher                                 |       1 | Replaced it with the repository's existing Chai assertions         |
-| Playwright server could not create a `tsx` IPC socket in the sandbox            |       1 | Re-ran the E2E suite with scoped approval                          |
-| Archive adapter factory read the manifest before initialization mode            |       1 | Removed the eager read and covered the real factory path           |
-| npm workspace `cwd` was treated as the repository Git root                      |       1 | Resolve the nearest Git root before Library configuration          |
-| Playwright browser processes aborted inside the filesystem sandbox              |       1 | Re-ran the installed browsers with scoped outside-sandbox access   |
-| Standalone Server typecheck read stale referenced package declarations          |       1 | Use root build/typecheck contract after fixing the new test type   |
-| Initial host smoke failed because sandbox denied the `tsx` IPC socket           |       1 | Re-ran the isolated temp-root smoke outside the sandbox            |
-| Purge documentation cross-file patch used a non-existent testing context        |       1 | Split updates by target file and inspect exact section text        |
-| Purge documentation format check reported three unformatted Markdown files      |       1 | Run repository Prettier on the exact reported files                |
-| Second format check reported the expanded task plan error table                 |       1 | Format `task_plan.md` after all error rows were recorded           |
-| Final verification record changed progress table alignment                      |       1 | Format `progress.md` after recording final validation counts       |
-| Final format-error logging patch used pre-Prettier table spacing                |       1 | Re-read exact table rows and patch the formatted context           |
-| Format check found the listener test changed after its earlier Prettier pass    |       1 | Re-format the exact test file before final verification            |
-| Initial source inspection read referenced a non-existent `errors.ts` file       |       1 | Located `ArchiveError` in `packages/domain/src/index.ts`           |
-| Standalone Archive and CLI typecheck read stale referenced declarations         |       1 | Use root build before the root typecheck contract                  |
-| Default Vitest config excluded the Archive integration test                     |       1 | Use the repository `test:integration` runner                       |
-| New Image source inspection test used an incorrect fixture SHA-256              |       1 | Replaced it with the digest reported for the tracked fixture       |
-| Combined documentation patch used stale Testing Strategy wording                |       1 | Split the patch and matched the current Chinese test sections      |
-| Lint rejected an `any` matcher nested inside an unknown CLI payload assertion   |       1 | Narrowed the payload explicitly and asserted command membership    |
-| Direct execution of CLI dist could not resolve workspace source `.js` imports   |       1 | Use the documented root `npm run assetctl -- ...` contract         |
-| Fixture validation could not create the `tsx` IPC socket in the sandbox         |       1 | Re-run the root fixture contract outside the sandbox               |
-| Documentation demo CLI could not create the `tsx` IPC socket in the sandbox     |       1 | Re-ran scoped temporary Library commands outside the sandbox       |
-| Development Server port `4174` was already occupied during screenshot setup     |       1 | Used an isolated production-like Server on loopback port `4180`    |
-| Full-page screenshots repeated the sticky shell near the bottom                 |       1 | Cropped exact documentation assets and visually rechecked them     |
-| Direct read model workspace test excluded integration files                     |       1 | Used the root integration Vitest config with the exact test path   |
-| Playwright browser launch was denied by the macOS sandbox                       |       1 | Re-ran the scoped browser suite outside the sandbox                |
-| E2E Prompt Compare assertion used the removed hidden label                      |       1 | Asserted the new visible `Compare` label and reran both browsers   |
-| Initial Purge Archive build found unused imports and exact optional type errors |       1 | Removed unused imports and omitted undefined optional properties   |
-| Purge Plan treated committed staging directories as recovery blockers           |       1 | Excluded transactions already published by a Commit Marker         |
-| Empty-directory cleanup used the file-oriented non-recursive `rmSync` path      |       1 | Use `rmdirSync` after exact child enumeration and cleanup          |
-| CLI parser local Map type did not include newly supported repeated options      |       1 | Match the local Map type to `ParsedArguments`                      |
-| Purge Web test used unavailable `jest-dom` enabled and disabled matchers        |       1 | Assert the native element `disabled` property with Chai            |
-| Node 24 experimental `localStorage` shadowed the jsdom test storage             |       2 | Install a deterministic in-memory Storage in Web test setup        |
-| CLI integration test overcounted Creation Purge plan paths                      |       1 | Assert the three canonical Creation, tree and Curation targets     |
-| Independent Purge lock did not exclude existing Archive writers                 |       1 | Reuse `archive.lock` and reject writers while the journal exists   |
-| Recovery sibling check compared macOS `/var` and `/private/var` lexically       |       1 | Compare canonical parent `realpath` values                         |
-| Ajv smoke initially resolved the root Ajv 6 instead of workspace Ajv 8          |       2 | Resolve Ajv from `packages/schemas` and compile both Purge schemas |
-| Root lint rejected an unbound mocked API method assertion                       |       1 | Assert the standalone Vitest mock function                         |
-| Sandbox denied the daemon integration test's temporary loopback listener        |       2 | Re-ran the complete integration suite outside the sandbox          |
+| Error                                                                           | Attempt | Resolution                                                          |
+| ------------------------------------------------------------------------------- | ------: | ------------------------------------------------------------------- |
+| Codex manual fetch failed because DNS was unavailable in the sandbox            |       1 | Re-ran the official helper with approved network access             |
+| Existing project Markdown used English prose against repository language rules  |       1 | Rewrote glossary and ADR prose in Simplified Chinese                |
+| Documentation patch had malformed section markers                               |       1 | Split the change into smaller valid patch sections                  |
+| Cross-file documentation patch used the wrong hunk context                      |       1 | Split updates by target file and validated each context             |
+| `tsx` IPC socket was denied by the Codex filesystem sandbox                     |       1 | Re-ran CLI and E2E verification with scoped approval                |
+| Initial dependency audit reported vulnerable static/Sharp versions              |       1 | Upgraded both packages and regenerated the lockfile                 |
+| SPA navigation was incorrectly protected before token bootstrap                 |       1 | Limited token enforcement to protected API routes                   |
+| Full-scale FTS query repeatedly evaluated three subqueries                      |       1 | Materialized one FTS hit set and reused it                          |
+| WebKit omitted links from the default macOS Tab focus ring                      |       1 | Split Tab-order and activation checks by browser                    |
+| Server build emitted artifacts into referenced package source directories       |       1 | Removed generated files and corrected project references            |
+| Documentation check traversed dependency and evaluation workspaces              |       1 | Excluded generated and dependency directories                       |
+| Web test used an unavailable `jest-dom` matcher                                 |       1 | Replaced it with the repository's existing Chai assertions          |
+| Playwright server could not create a `tsx` IPC socket in the sandbox            |       1 | Re-ran the E2E suite with scoped approval                           |
+| Archive adapter factory read the manifest before initialization mode            |       1 | Removed the eager read and covered the real factory path            |
+| npm workspace `cwd` was treated as the repository Git root                      |       1 | Resolve the nearest Git root before Library configuration           |
+| Playwright browser processes aborted inside the filesystem sandbox              |       1 | Re-ran the installed browsers with scoped outside-sandbox access    |
+| Standalone Server typecheck read stale referenced package declarations          |       1 | Use root build/typecheck contract after fixing the new test type    |
+| Initial host smoke failed because sandbox denied the `tsx` IPC socket           |       1 | Re-ran the isolated temp-root smoke outside the sandbox             |
+| Purge documentation cross-file patch used a non-existent testing context        |       1 | Split updates by target file and inspect exact section text         |
+| Purge documentation format check reported three unformatted Markdown files      |       1 | Run repository Prettier on the exact reported files                 |
+| Second format check reported the expanded task plan error table                 |       1 | Format `task_plan.md` after all error rows were recorded            |
+| Final verification record changed progress table alignment                      |       1 | Format `progress.md` after recording final validation counts        |
+| Final format-error logging patch used pre-Prettier table spacing                |       1 | Re-read exact table rows and patch the formatted context            |
+| Format check found the listener test changed after its earlier Prettier pass    |       1 | Re-format the exact test file before final verification             |
+| Initial source inspection read referenced a non-existent `errors.ts` file       |       1 | Located `ArchiveError` in `packages/domain/src/index.ts`            |
+| Standalone Archive and CLI typecheck read stale referenced declarations         |       1 | Use root build before the root typecheck contract                   |
+| Default Vitest config excluded the Archive integration test                     |       1 | Use the repository `test:integration` runner                        |
+| New Image source inspection test used an incorrect fixture SHA-256              |       1 | Replaced it with the digest reported for the tracked fixture        |
+| Combined documentation patch used stale Testing Strategy wording                |       1 | Split the patch and matched the current Chinese test sections       |
+| Lint rejected an `any` matcher nested inside an unknown CLI payload assertion   |       1 | Narrowed the payload explicitly and asserted command membership     |
+| Direct execution of CLI dist could not resolve workspace source `.js` imports   |       1 | Use the documented root `npm run assetctl -- ...` contract          |
+| Fixture validation could not create the `tsx` IPC socket in the sandbox         |       2 | Re-run the root fixture contract outside the sandbox                |
+| Documentation demo CLI could not create the `tsx` IPC socket in the sandbox     |       1 | Re-ran scoped temporary Library commands outside the sandbox        |
+| Development Server port `4174` was already occupied during screenshot setup     |       1 | Used an isolated production-like Server on loopback port `4180`     |
+| Full-page screenshots repeated the sticky shell near the bottom                 |       1 | Cropped exact documentation assets and visually rechecked them      |
+| Direct read model workspace test excluded integration files                     |       1 | Used the root integration Vitest config with the exact test path    |
+| Playwright browser launch was denied by the macOS sandbox                       |       1 | Re-ran the scoped browser suite outside the sandbox                 |
+| E2E Prompt Compare assertion used the removed hidden label                      |       1 | Asserted the new visible `Compare` label and reran both browsers    |
+| Initial Purge Archive build found unused imports and exact optional type errors |       1 | Removed unused imports and omitted undefined optional properties    |
+| Purge Plan treated committed staging directories as recovery blockers           |       1 | Excluded transactions already published by a Commit Marker          |
+| Empty-directory cleanup used the file-oriented non-recursive `rmSync` path      |       1 | Use `rmdirSync` after exact child enumeration and cleanup           |
+| CLI parser local Map type did not include newly supported repeated options      |       1 | Match the local Map type to `ParsedArguments`                       |
+| Purge Web test used unavailable `jest-dom` enabled and disabled matchers        |       1 | Assert the native element `disabled` property with Chai             |
+| Node 24 experimental `localStorage` shadowed the jsdom test storage             |       2 | Install a deterministic in-memory Storage in Web test setup         |
+| CLI integration test overcounted Creation Purge plan paths                      |       1 | Assert the three canonical Creation, tree and Curation targets      |
+| Independent Purge lock did not exclude existing Archive writers                 |       1 | Reuse `archive.lock` and reject writers while the journal exists    |
+| Recovery sibling check compared macOS `/var` and `/private/var` lexically       |       1 | Compare canonical parent `realpath` values                          |
+| Ajv smoke initially resolved the root Ajv 6 instead of workspace Ajv 8          |       2 | Resolve Ajv from `packages/schemas` and compile both Purge schemas  |
+| Root lint rejected an unbound mocked API method assertion                       |       1 | Assert the standalone Vitest mock function                          |
+| Sandbox denied the daemon integration test's temporary loopback listener        |       2 | Re-ran the complete integration suite outside the sandbox           |
+| Phase 19 initial build found legacy requests without explicit provider          |       1 | Add stable provider IDs to every existing Generation fixture        |
+| xAI executor build found missing typed provider errors and optional mismatch    |       1 | Extend ArchiveErrorCode and omit absent API key fields              |
+| Web build found Generation and Creation fixtures missing provider fields        |       1 | Update fixtures while adding provider provenance UI coverage        |
+| Repository hook rejected compound source inspection commands                    |       2 | Run each source-tree read as a separate tool command                |
+| Progress update patch used a non-existent Phase 19 table row                    |       1 | Patch the existing Phase 19 section with exact context              |
+| Large Skill patch used mismatched finalize paragraph context                    |       1 | Split the Skill rewrite into section-sized patches                  |
+| Skill test expected one mark command mention after OpenAI happy-path promotion  |       1 | Update the structural assertion to the two intentional references   |
+| Sandbox denied the Phase 19 mock xAI HTTP listener on loopback                  |       2 | Re-run the scoped integration test outside the filesystem sandbox   |
+| Schema test search included a non-existent `tests/fixtures` path                |       1 | Continue with tracked fixture and package test locations only       |
+| Root lint found unnecessary assertions and non-awaiting async fetch mocks       |       1 | Use context-typed Promise mocks and explicit unknown payload guards |
+| Phase 18 worker still treated read-model Schema `1` as the only usable version  |       1 | Compare against exported `READ_MODEL_VERSION` after the v2 upgrade  |
+| E2E assumed one produced-by relation and retained pre-provider visual baselines |       1 | Select one of both valid relations and refresh inspected snapshots  |
+| Provider model resolution patch used pre-Prettier import context                |       1 | Re-read exact imports and apply the adapter change in smaller hunks |

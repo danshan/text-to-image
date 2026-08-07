@@ -15,6 +15,7 @@ describe("gallery query state", () => {
       favorite: true,
       rating: 4,
       role: "composition",
+      provider: "xai",
       sort: "rating_desc" as const,
       showHidden: true,
     };
@@ -24,6 +25,7 @@ describe("gallery query state", () => {
     expect(parseGalleryQuery(serialized)).toEqual({ ...query, tags: ["editorial", "portrait"] });
     expect(serialized).toContain("tag=editorial");
     expect(serialized).toContain("tag=portrait");
+    expect(serialized).toContain("provider=xai");
   });
 
   it("rejects unsupported enum and rating values", () => {

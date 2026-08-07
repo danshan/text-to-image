@@ -24,7 +24,7 @@ related:
 - npm dependencies installed with `npm ci`.
 - macOS local filesystem for release-gate filesystem tests.
 - Playwright browser binaries for end-to-end tests.
-- Codex built-in image generation only for explicit manual smoke tests.
+- Codex built-in image generation 与真实 xAI API 只用于显式授权的 manual smoke tests. 默认测试使用 fake executor 与 mock xAI HTTP server.
 
 自动测试禁止访问真实用户 Library. 所有 filesystem tests 使用显式 `mkdtemp` root, 测试结束后仅清理该已验证 temp root.
 
@@ -48,6 +48,8 @@ related:
 - Reference Image roles 和 `other` guidance rule.
 - Prompt Revision parent validation 与 cycle detection.
 - Generation terminal status combinations.
+- Provider registry、Provider Preference revision guard、tracked/local config merge 与 credential precedence.
+- xAI endpoint selection、bounded `b64_json` decode、known HTTP failure 与 uncertain transport failure normalization.
 - Safety Rejection error mapping、moderation stage 与 category preservation.
 - Replay relation.
 - transaction state transitions.
@@ -91,6 +93,8 @@ JSON examples embedded in正式文档必须被提取并解析; 标记为 illustr
 - reject extension mismatch、SVG、animated or corrupt image.
 - content deduplication.
 - create Creation、checkpoint Revision、Generation success/failure/interrupted.
+- 一个 Variant checkpoint 一个共享 Prompt Revision, 并为每个 Provider 创建独立 Generation transaction.
+- mock xAI HTTP server generation success、Reference edit mapping、credential pre-mark failure 与 independent recovery.
 - Commit Marker publication 和 reader visibility.
 - uncommitted final object detection.
 - cache delete/rebuild.

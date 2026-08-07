@@ -117,7 +117,7 @@ Codex 创建完成后会返回 Creation ID. 以后可以直接用标题或 Creat
 
 > 请使用 `$generate-and-archive` 为 Creation "红色机器人森林系列" 读取当前 Prompt Draft, 生成 1 张图片并归档全部结果.
 
-Codex 会检查 Library 状态, 固定实际 Prompt, 调用图片生成工具, 检查输出并完成归档. 完成报告应包含 Creation、Revision、Generation、结果状态、图片路径、尺寸和 SHA-256.
+如果请求没有明确平台, Codex 会展示该 Creation 上次确认的 Provider Preference, 并询问本次使用 `OpenAI`, `Grok / xAI` 或同时使用两者. 当前请求已经明确平台时, 该选择直接作为本次确认并记忆到 Creation. Codex 随后检查 Library 与全部所选平台, 固定实际 Prompt, 调用图片生成工具, 检查输出并完成归档. 完成报告应包含 Creation、Revision、每个平台的 Generation、Provider、Model、结果状态、图片路径、尺寸和 SHA-256.
 
 ### 3.3 查看结果
 
@@ -130,7 +130,7 @@ Codex 会检查 Library 状态, 固定实际 Prompt, 调用图片生成工具, �
 - 点击缩略图打开图片详情.
 - 使用星标收藏满意结果.
 - 使用搜索查找标题、Prompt、标签或备注.
-- 使用 `Filters` 筛选状态和收藏结果.
+- 使用 `Filters` 按状态、Provider 和收藏结果筛选.
 - 调整排序方式.
 
 ## 4. 如何写清楚一个 Prompt
@@ -210,6 +210,8 @@ Codex 界面显示 `Files mentioned` 不等于项目已经获得了可归档的�
 
 生成开始前会先检查全部参考图. 任何一张缺失、不可读、格式不支持或损坏时, 本次 Generation 都不会开始, 也不会静默忽略失败图片. 已成功导入 Library 的资产会保留, 下次使用相同文件时按内容自动复用.
 
+Grok / xAI 当前最多接受三张 Reference Image. 同时选择 OpenAI 和 Grok 时, 如果 Reference 超过三张, 整个 Variant 会在调用任何平台前停止. 这时应减少 Reference, 或明确取消本次 Grok 选择; 系统不会静默忽略图片或自动 fallback 到 OpenAI.
+
 ### 5.5 在 Generation 页面核对参考关系
 
 点击 Creation 的 Generation Timeline 记录, 可以看到本次实际使用的 Prompt Revision、输出、Reference Images、role、guidance 和工具信息.
@@ -260,9 +262,9 @@ Prompt 迭代的核心原则是: 保留稳定部分, 每次只改变一个主要
 
 如果想比较多个随机结果, 可以要求多个 variant:
 
-> 请使用 `$generate-and-archive` 为当前 Creation 生成 3 个 variant. 三次都使用相同 Prompt Revision 和相同 Reference Images, 每次都完整归档. 不要根据前一个结果自动修改 Prompt.
+> 请使用 `$generate-and-archive` 为当前 Creation 生成 3 个 variant. 三次都使用相同 Prompt 内容和相同 Reference Images, 每次都完整归档. 不要根据前一个结果自动修改 Prompt.
 
-每个 variant 是独立 Generation. 工具不会把多次调用合并成一条记录, 也不会因为某张主观质量较差而丢弃它.
+每个 variant 使用自己的 Prompt Revision. 选择一个平台时, 每个 variant 对应一个 Generation; 同时选择 OpenAI 与 Grok 时, 同一个 variant 的两个 Generation 共享该 variant 的 Prompt Revision 和 Reference Images. 因而 3 个 variant × 2 个平台会产生 6 个独立 Generation, 不创建 Generation Group. 不同平台可以并行, 同一平台内的 variant 依次执行. 工具不会因为某张主观质量较差而丢弃它.
 
 ### 6.4 比较历史版本
 
@@ -378,7 +380,7 @@ Creation Purge 完成并同步 index 后, 该 Creation 与全部 Generation 已�
 
 ### 可以直接修改已经生成的图片吗?
 
-当前 `$generate-and-archive` 只支持 generate mode, 不支持 edit target、mask 或透明背景后处理. 你可以把旧图片作为新的 Reference Image, 明确 role 和要改变的内容, 生成一个新结果.
+当前 `$generate-and-archive` 支持 OpenAI 与 Grok 生成, 但不支持对目标图片执行 edit、mask 或透明背景后处理. xAI transport 在存在一至三张 Reference Image 时使用 provider edit endpoint, 这仍表示创建一个新的 Generation, 不会修改旧 Image Asset. 你可以把旧图片作为新的 Reference Image, 明确 role 和要改变的内容, 生成一个新结果.
 
 ### 为什么差的结果也被保存?
 
@@ -406,6 +408,10 @@ Generation 已经提交到 Archive, 但 SQLite Gallery index 尚未追平. `INDE
 
 > 请使用 `$generate-and-archive` 为 Creation `[title-or-id]` 读取当前 Prompt Draft, 生成 1 张图片并归档全部结果. 如果需要改变主体、构图目标、用途或风格方向, 先向我确认.
 
+### 同时使用 OpenAI 与 Grok
+
+> 请使用 `$generate-and-archive` 为 Creation `[title-or-id]` 生成 1 个 variant, 同时使用 OpenAI 和 Grok. 两个平台使用相同 Prompt Revision 和 Reference Images, 分别创建并归档独立 Generation.
+
 ### 单张角色参考图
 
 > 请使用 `$generate-and-archive` 为 Creation `[title-or-id]` 生成 1 张图片. 参考图路径是 `[absolute-path]`, role 为 `subject`. 严格保持 `[identity-features]`. 本次只改变 `[one-change]`, 其他身份、比例、服装和基础风格不变.
@@ -420,7 +426,7 @@ Generation 已经提交到 Archive, 但 SQLite Gallery index 尚未追平. `INDE
 
 ### 多个 variant
 
-> 请使用 `$generate-and-archive` 为当前 Creation 生成 `[count]` 个 variant. 每次使用相同 Prompt Revision、Reference Images、roles 和 guidance, 分别创建并归档独立 Generation, 不自动修改 Prompt, 不丢弃任何输出.
+> 请使用 `$generate-and-archive` 为当前 Creation 生成 `[count]` 个 variant. 每个 variant 使用相同 Prompt 内容、Reference Images、roles 和 guidance, 但保存独立 Prompt Revision 和 Generation, 不自动修改 Prompt, 不丢弃任何输出.
 
 ### 失败后的安全重试
 

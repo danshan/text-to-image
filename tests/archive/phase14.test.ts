@@ -63,6 +63,7 @@ describe("Phase 14 Generation Workflow contracts", () => {
             expectedAssetSha256: inspection.assetSha256,
           },
         ],
+        provider: "openai",
         tool: { name: "fake.generator", model: "deterministic-v1", parameters: {} },
       };
 
@@ -98,6 +99,7 @@ describe("Phase 14 Generation Workflow contracts", () => {
         changeInstruction: "",
         references: [{ assetSha256: expectedAssetSha256, roles: ["subject"] }],
         sessionImages: [{ sourcePath: source, expectedAssetSha256 }],
+        provider: "openai",
         tool: { name: "fake.generator", model: null, parameters: {} },
       };
 
@@ -134,6 +136,7 @@ describe("Phase 14 Generation Workflow contracts", () => {
           prompt: "A deterministic CLI workflow.",
           changeInstruction: "",
           references: [],
+          provider: "openai",
           tool: { name: "fake.generator", model: "deterministic-v1", parameters: {} },
         },
       );

@@ -58,6 +58,7 @@ describe("deterministic fake generation workflow SLO", () => {
           prompt: "A deterministic fake generation fixture.",
           changeInstruction: "",
           references: [],
+          provider: "openai",
           tool: { name: "fake.generator", model: "deterministic-v1", parameters: {} },
         });
         progress.stage("Waiting for image model");

@@ -34,6 +34,7 @@ function generationRequest(prompt = "A quiet study.") {
     prompt,
     changeInstruction: "",
     references: [],
+    provider: "openai",
     tool: { name: "image_gen.imagegen", model: null, parameters: {} },
   };
 }

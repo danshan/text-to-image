@@ -1,3 +1,13 @@
 {
-  "library": "./library"
+  "library": "./library",
+  "providers": {
+    "openai": {
+      "enabled": true
+    },
+    "xai": {
+      "enabled": true,
+      "defaultModel": "grok-imagine-image-quality",
+      "timeoutSeconds": 600
+    }
+  }
 }

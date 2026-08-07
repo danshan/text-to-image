@@ -375,6 +375,17 @@ export class ReadModel {
       conditions.push("g.tool_name = ?");
       parameters.push(query.tool);
     }
+    if (query.provider) {
+      conditions.push(`EXISTS (
+        SELECT 1
+        FROM generation_outputs provider_output
+        JOIN generations provider_generation
+          ON provider_generation.id = provider_output.generation_id
+        WHERE provider_output.asset_sha256 = a.sha256
+          AND provider_generation.provider = ?
+      )`);
+      parameters.push(query.provider);
+    }
     if (query.model) {
       conditions.push("g.tool_model = ?");
       parameters.push(query.model);
@@ -479,6 +490,7 @@ export class ReadModel {
       tags: parseJson<string[]>(row.tags_json, []),
       favorite: numberColumn(row, "favorite") === 1,
       note: stringColumn(row, "note"),
+      providerPreference: parseJson<string[]>(row.provider_preference_json, []),
       entityRevision: numberColumn(row, "entity_revision"),
       generationCount: numberColumn(row, "generation_count"),
       imageCount: numberColumn(row, "image_count"),
@@ -521,6 +533,9 @@ export class ReadModel {
       replayOfGenerationId: nullableStringColumn(row, "replay_of_generation_id"),
       status: stringColumn(row, "status") as IndexedGeneration["status"],
       outcomeKnown: numberColumn(row, "outcome_known") === 1,
+      provider: nullableStringColumn(row, "provider"),
+      providerSource: (stringColumn(row, "provider_source") ||
+        "unknown") as IndexedGeneration["providerSource"],
       references: referenceRows.map((reference) => ({
         assetSha256: stringColumn(reference, "asset_sha256"),
         roles: parseJson<IndexedGeneration["references"][number]["roles"]>(
@@ -600,6 +615,21 @@ export class ReadModel {
       .all(creationId) as SqlRow[];
     return rows.flatMap((row) => {
       const generation = this.getGeneration(stringColumn(row, "id"));
+      return generation ? [generation] : [];
+    });
+  }
+
+  getProducingGenerations(assetSha256: string): IndexedGeneration[] {
+    const rows = this.#db()
+      .prepare(
+        `SELECT generation_id
+         FROM generation_outputs
+         WHERE asset_sha256 = ?
+         ORDER BY generation_id`,
+      )
+      .all(assetSha256) as SqlRow[];
+    return rows.flatMap((row) => {
+      const generation = this.getGeneration(stringColumn(row, "generation_id"));
       return generation ? [generation] : [];
     });
   }

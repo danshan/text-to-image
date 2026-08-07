@@ -388,6 +388,7 @@ describe("archive vertical slice", () => {
       prompt: "A red sphere on linen, soft side light.",
       changeInstruction: "Use softer side light.",
       references: [],
+      provider: "openai",
       tool: {
         name: "image_gen.imagegen",
         model: null,
@@ -571,6 +572,9 @@ describe("domain and image invariants", () => {
     expect(commands).toContain("asset.inspect");
     expect(commands).toContain("asset.import");
     expect(commands).toContain("generation.begin");
+    expect(commands).toContain("generation.begin-variant");
+    expect(commands).toContain("generation.invoke-provider");
+    expect(commands).toContain("providers.list");
     expect(() => inspectImageSource(join(ownerRoot, "missing.png"))).toThrowError(
       expect.objectContaining({ code: "IMAGE_SOURCE_MISSING" }),
     );
@@ -601,6 +605,7 @@ function generationRequest() {
     prompt: "A small observational study.",
     changeInstruction: "",
     references: [],
+    provider: "openai",
     tool: {
       name: "image_gen.imagegen",
       model: null,

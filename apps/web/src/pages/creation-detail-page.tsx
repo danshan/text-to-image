@@ -283,6 +283,10 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
                                 >
                                   <span>
                                     <code>{generation.id.slice(0, 12)}</code>
+                                    <small>
+                                      {providerLabel(generation.provider)} ·{" "}
+                                      {generation.tool.model || "Unknown model"}
+                                    </small>
                                     <time dateTime={generation.startedAt}>
                                       {formatDate(generation.startedAt)}
                                     </time>
@@ -357,6 +361,10 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
                         <strong>{formatDate(generation.startedAt)}</strong>
                         <code>{generation.id.slice(0, 12)}</code>
                       </button>
+                      <span className="revision-chip">
+                        {providerLabel(generation.provider)} ·{" "}
+                        {generation.tool.model || "Unknown model"}
+                      </span>
                       <GenerationStatusBadge
                         status={generation.status}
                         outcomeKnown={generation.outcomeKnown}
@@ -369,8 +377,10 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
                       <Link to={`/generations/${generation.id}`}>Open details</Link>
                     </div>
                     <p className="generation-summary">
-                      {generation.outputs.length} outputs · {generation.references.length}{" "}
-                      references{generation.replayOfGenerationId ? " · replay" : ""}
+                      {providerLabel(generation.provider)} ·{" "}
+                      {generation.tool.model || "Unknown model"} · {generation.outputs.length}{" "}
+                      outputs · {generation.references.length} references
+                      {generation.replayOfGenerationId ? " · replay" : ""}
                     </p>
                     {generation.status !== "succeeded" && (
                       <div className="timeline-issue" role="status">
@@ -447,6 +457,12 @@ export function CreationDetailPage({ api, creationId }: { api: ApiClient; creati
       </div>
     </div>
   );
+}
+
+function providerLabel(provider: string | null): string {
+  if (provider === "openai") return "OpenAI";
+  if (provider === "xai") return "Grok / xAI";
+  return provider || "Unknown provider";
 }
 
 function linearizeRevisions(

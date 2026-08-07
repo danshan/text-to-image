@@ -87,6 +87,7 @@ async function fixture(): Promise<{ root: string; assetSha256: string }> {
     replayOfGenerationId: null,
     status: "succeeded",
     outcomeKnown: true,
+    provider: "xai",
     references: [
       {
         assetSha256,
@@ -95,7 +96,11 @@ async function fixture(): Promise<{ root: string; assetSha256: string }> {
       },
     ],
     outputs: [{ index: 0, assetSha256, mediaType: "image/png", width: 1536, height: 1024 }],
-    tool: { name: "image_gen.imagegen", model: null, parameters: {} },
+    tool: {
+      name: "xai.images.generate",
+      model: "grok-imagine-image-quality",
+      parameters: {},
+    },
     startedAt: "2026-08-02T12:02:05.000Z",
     completedAt: "2026-08-02T12:03:00.000Z",
     error: null,
@@ -150,6 +155,7 @@ async function fixture(): Promise<{ root: string; assetSha256: string }> {
       tags: ["portrait"],
       favorite: true,
       note: "Warm palette next.",
+      providerPreference: ["xai"],
       updatedAt: "2026-08-02T12:05:00.000Z",
     }),
   );
@@ -239,7 +245,14 @@ describe("ReadModel", () => {
       rating: 4,
       entityRevision: 2,
     });
-    expect(model.getGeneration(generationId)?.outputs[0]?.assetSha256).toBe(assetSha256);
+    expect(model.getGeneration(generationId)).toMatchObject({
+      provider: "xai",
+      providerSource: "recorded",
+      outputs: [{ assetSha256 }],
+    });
+    expect(model.getCreation(creationId)?.providerPreference).toEqual(["xai"]);
+    expect(model.listGallery({ provider: "xai" }).total).toBe(1);
+    expect(model.listGallery({ provider: "openai" }).total).toBe(0);
     expect(model.getRevisions(creationId)[0]?.prompt).toContain("quiet portrait");
     expect(model.getReferenceRelations(assetSha256)).toEqual([
       {
@@ -345,6 +358,10 @@ describe("ReadModel", () => {
         },
       },
     ]);
+    expect(model.getGeneration(failedGenerationId)).toMatchObject({
+      provider: "openai",
+      providerSource: "legacy-derived",
+    });
 
     const recovered = json({
       schemaVersion: 1,

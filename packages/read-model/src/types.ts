@@ -17,6 +17,7 @@ export interface GalleryQuery {
   rating?: number;
   role?: "subject" | "style" | "composition" | "palette" | "other";
   tool?: string;
+  provider?: string;
   model?: string;
   from?: string;
   to?: string;
@@ -52,6 +53,7 @@ export interface IndexedCreation {
   tags: string[];
   favorite: boolean;
   note: string;
+  providerPreference: string[];
   entityRevision: number;
   generationCount: number;
   imageCount: number;
@@ -86,6 +88,8 @@ export interface IndexedGeneration {
   replayOfGenerationId: string | null;
   status: "succeeded" | "failed" | "interrupted";
   outcomeKnown: boolean;
+  provider: string | null;
+  providerSource: "recorded" | "legacy-derived" | "unknown";
   references: Array<{
     assetSha256: string;
     roles: Array<"subject" | "style" | "composition" | "palette" | "other">;

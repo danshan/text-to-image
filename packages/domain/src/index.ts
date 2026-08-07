@@ -2,6 +2,7 @@ export const LIBRARY_FORMAT_VERSION = 1 as const;
 export const SCHEMA_VERSION = 1 as const;
 
 export const REFERENCE_ROLES = ["subject", "style", "composition", "palette", "other"] as const;
+export const IMAGE_PROVIDER_ID_PATTERN = /^[a-z][a-z0-9_-]{0,49}$/;
 
 export type ReferenceRole = (typeof REFERENCE_ROLES)[number];
 export type GenerationStatus = "succeeded" | "failed" | "interrupted";
@@ -133,6 +134,7 @@ export interface GenerationRecord {
   outcomeKnown: boolean;
   references: ReferenceImage[];
   outputs: GenerationOutput[];
+  provider?: string;
   tool: {
     name: string;
     model: string | null;
@@ -166,6 +168,7 @@ export interface CreationCuration {
   tags: string[];
   favorite: boolean;
   note: string;
+  providerPreference?: string[];
   updatedAt: string;
 }
 
@@ -240,6 +243,26 @@ export function assertGenerationError(error: GenerationErrorRecord): void {
   }
 }
 
+export function assertImageProviderId(provider: string): void {
+  if (!IMAGE_PROVIDER_ID_PATTERN.test(provider)) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Image Provider ID must be a stable lowercase identifier.",
+      { provider },
+    );
+  }
+}
+
+export function assertProviderPreference(providers: readonly string[]): void {
+  if (providers.length > 10 || new Set(providers).size !== providers.length) {
+    throw new ArchiveError(
+      "ARCHIVE_SCHEMA_INVALID",
+      "Provider Preference must contain at most ten unique provider IDs.",
+    );
+  }
+  providers.forEach(assertImageProviderId);
+}
+
 export type ArchiveErrorCode =
   | "ARCHIVE_CONFLICT"
   | "ARCHIVE_CORRUPTION"
@@ -253,6 +276,14 @@ export type ArchiveErrorCode =
   | "CURATION_CONFLICT"
   | "DRAFT_CONFLICT"
   | "IMAGE_INVALID"
+  | "IMAGE_PROVIDER_AUTH_MISSING"
+  | "IMAGE_PROVIDER_CAPABILITY_UNSUPPORTED"
+  | "IMAGE_PROVIDER_CONFIG_INVALID"
+  | "IMAGE_PROVIDER_DISABLED"
+  | "IMAGE_PROVIDER_EXECUTOR_UNSUPPORTED"
+  | "IMAGE_PROVIDER_MISMATCH"
+  | "IMAGE_PROVIDER_RESPONSE_INVALID"
+  | "IMAGE_PROVIDER_RESPONSE_TOO_LARGE"
   | "IMAGE_SOURCE_MISSING"
   | "IMAGE_SOURCE_UNREADABLE"
   | "IMAGE_UNSUPPORTED"

@@ -121,6 +121,7 @@ export interface CreationSummary {
   tags: string[];
   favorite: boolean;
   note: string;
+  providerPreference: string[];
   entityRevision: number;
   generationCount: number;
   imageCount: number;
@@ -163,6 +164,8 @@ export interface GenerationView {
   replayOfGenerationId: string | null;
   status: "succeeded" | "failed" | "interrupted";
   outcomeKnown: boolean;
+  provider: string | null;
+  providerSource: "recorded" | "legacy-derived" | "unknown";
   references: Array<{
     assetSha256: string;
     roles: ReferenceRelation["roles"];
@@ -215,6 +218,7 @@ export interface CreationDetail extends CreationSummary {
 
 export interface ImageDetail extends ImageSummary {
   producingGeneration: GenerationView | null;
+  producingGenerations: GenerationView[];
   usedAsReference: ReferenceRelation[];
 }
 
@@ -293,6 +297,7 @@ export interface CurationPatchRequest {
     note?: string;
     rating?: number | null;
     hidden?: boolean;
+    providerPreference?: string[];
   };
 }
 

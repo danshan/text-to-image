@@ -17,7 +17,7 @@ Creation 中由用户维护的当前可修改提示词工作稿. 它保留用户
 _Avoid_: Current version, latest revision
 
 **Prompt Revision**:
-实际发送给图片生成工具的完整提示词不可变快照, 在生成或显式保存检查点时创建. Revision 可以指定一个父版本, 因而允许历史分支, 但不支持合并; 已有 Revision 永远不被修改或替换.
+实际发送给图片生成工具的完整提示词不可变快照, 在生成或显式保存检查点时创建. Revision 可以指定一个父版本, 因而允许历史分支, 但不支持合并; 已有 Revision 永远不被修改或替换. 同一个 Generation Variant 向多个 provider fan-out 时, 对应 Generation 共享一个 Prompt Revision, 以保证各 provider 接收 byte-identical effective Prompt.
 _Avoid_: Draft, prompt file
 
 **Change Instruction**:
@@ -40,9 +40,25 @@ _Avoid_: Attachment, Reference Image
 Image Asset 在作为存续 Generation 视觉输入时承担的关系角色. 它不是独立的资产类型, 用途由关系上的 `roles` 与可选 `guidance` 表达; Generation 随 Creation Purge 消失后, 对应 Reference Image 关系同时消失, 不保留“曾被引用”的历史视图.
 _Avoid_: Reference asset, copied input
 
+**Image Provider**:
+实际接收图片生成调用并提供模型服务的平台身份, 使用稳定 ID 表达, 例如 `openai` 或 `xai`. 它不同于具体 Image Model; `xAI` 是 Image Provider, `Grok Imagine` 是 Image Model.
+_Avoid_: Model, Grok provider, tool
+
+**Image Model**:
+一次 Generation 实际使用的 provider model identity. 已知时保存 provider 返回或调用时指定的真实标识, 未知时保持未知, 不从 Image Provider 或 tool name 推断.
+_Avoid_: Provider, platform, invented default
+
+**Provider Preference**:
+Creation 级别的可变 Image Provider 选择偏好, 保存该 Creation 上一次确认的一个或多个 provider, 并在下一次未明确指定 provider 的生成请求中作为预选项展示. 它不替代用户确认, 不属于 immutable Generation provenance, 也不从 Generation 历史反推.
+_Avoid_: Default provider, Generation provider, implicit selection
+
+**Generation Variant**:
+用户在一次生成请求中要求的一个独立候选结果. 每个 Variant 对每个已选 Image Provider 创建一个 Generation; 同一个 Variant 的 provider fan-out 共享 Prompt Revision 和 Reference Image, 不同 Variant 保持独立的 Prompt Revision 与 Generation lifecycle. Variant 不是独立持久化聚合实体.
+_Avoid_: Output, provider batch, Generation Group
+
 **Generation**:
-一次不可变的图片生成工具调用, 绑定一个 Prompt Revision 和一组确定的 Reference Image. 重试会产生新的 Generation, 单个 Generation 可以有零个或多个输出, 终态为 `succeeded`, `failed` 或 `interrupted`; `interrupted` 表示工具调用结果无法确定.
-_Avoid_: Creation, batch, retry
+一次面向单个图片生成 provider 的不可变工具或 API 调用, 绑定一个 Prompt Revision 和一组确定的 Reference Image. 重试会产生新的 Generation, 单个 Generation 可以有零个或多个输出, 终态为 `succeeded`, `failed` 或 `interrupted`; `interrupted` 表示调用结果无法确定. 同一个 Generation Variant 选择多个 provider 时, 多个 Generation 共享一个 Prompt Revision 和同一组 Reference Image, 但各自独立完成, 不创建跨 Generation 的聚合实体.
+_Avoid_: Creation, batch, retry, Generation Group
 
 **Generation Issue**:
 由尚未 Purge 的 Creation 中, 已提交 Generation 的 known failure 或 uncertain outcome 表达的用户关注事项. 它不是独立持久化实体, 不是 Image Asset, 也不改变 Generation 的 immutable provenance; Creation Purge 提交后随所属历史一同消失.

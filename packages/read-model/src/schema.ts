@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const READ_MODEL_VERSION = 1;
+export const READ_MODEL_VERSION = 2;
 
 export function createSchema(database: DatabaseSync): void {
   database.exec(`
@@ -18,6 +18,7 @@ export function createSchema(database: DatabaseSync): void {
       tags_json TEXT NOT NULL DEFAULT '[]',
       favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
       note TEXT NOT NULL DEFAULT '',
+      provider_preference_json TEXT NOT NULL DEFAULT '[]',
       entity_revision INTEGER NOT NULL DEFAULT 0
     ) STRICT;
     CREATE TABLE revisions (
@@ -37,6 +38,8 @@ export function createSchema(database: DatabaseSync): void {
       replay_of_generation_id TEXT,
       status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed', 'interrupted')),
       outcome_known INTEGER NOT NULL CHECK (outcome_known IN (0, 1)),
+      provider TEXT,
+      provider_source TEXT NOT NULL CHECK (provider_source IN ('recorded', 'legacy-derived', 'unknown')),
       tool_name TEXT NOT NULL,
       tool_model TEXT,
       parameters_json TEXT NOT NULL,

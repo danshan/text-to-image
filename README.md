@@ -6,6 +6,8 @@ MVP 已完成. 它提供 versioned Asset Library Schema、`assetctl`、原子 Ge
 
 Phase 17 已交付 Creation Purge 与 Image Asset Purge 的核心 vertical slice, 包括 shared verified replacement、CLI、API 与 Detail Danger Zone. 完整 fault injection、异步 maintenance progress 与 browser E2E 尚未完成, 相关正式文档继续保持 `draft`; 不要手工删除 managed Archive 文件.
 
+Phase 19 已支持 OpenAI 与 Grok / xAI multi-provider Generation. 同一个 Variant 可以跨平台共享 Prompt Revision 和 Reference Images, 但每个平台保存独立 Generation、状态与 recovery evidence. xAI 使用 repository-owned direct API executor; Google AI 与 Antigravity 当前不实现, 只保留 Provider Adapter 扩展边界.
+
 ## Quick Start
 
 需要 Node.js 24 和 npm.
@@ -23,7 +25,7 @@ npm run dev
 npm run dev -- --host 0.0.0.0
 ```
 
-可选 root `.env` 会被 `dev`、`start` 与 daemon 自动加载, `.env.example` 提供变量清单. 已安装 mise 时可以使用 npm-backed tasks:
+可选 root `.env` 会被 `dev`、`start` 与 daemon 自动加载, xAI Provider discovery 与 invocation 也会按需读取其中的 `XAI_API_KEY`. `.env.example` 提供空变量清单, root `.env` 不进入 Git. 已安装 mise 时可以使用 npm-backed tasks:
 
 ```bash
 mise dev

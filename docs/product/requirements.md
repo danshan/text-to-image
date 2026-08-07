@@ -165,6 +165,18 @@ related:
 - `FR-GEN-020`: Generation happy path 必须收敛为只读 `preflight`、高层 `begin`、built-in image generation 与高层 `finalize`. Begin 复用 import、prepare、Prompt hash gate 与 mark primitives; Finalize 复用 capture、terminal finalize、commit 与 incremental index primitives. Recovery、fault injection 与精确状态检查继续使用低层命令, 两者不得形成第二套 Archive 写入逻辑.
 - `FR-GEN-021`: built-in result 已在会话中可见时, 视觉质量检查不得阻塞 Commit Marker 与 index ready. 图片工具返回可解析的本地 Output 后, Skill 的下一动作必须启动高层 Finalize; 只有结果不可见或需要验证 committed bytes 时, 才在 commit 后读取 Archive Output.
 - `FR-GEN-022`: Workspace Ready 的普通 Generation 只加载 Generation Skill contracts 与一次 Preflight snapshot. 完整项目计划、设计与进度文档只用于修改项目行为或异常恢复, 不属于每次生成前置条件.
+- `FR-GEN-023`: Generation 必须显式记录单个 Image Provider 与实际已知 Image Model. 新记录使用稳定 provider ID; legacy record 不改写, read model 只能通过严格 tool allowlist 派生并标记 `legacy-derived`.
+- `FR-GEN-024`: 未在当前请求中明确 provider 时, Skill 必须展示 Creation 的 Provider Preference 作为预选项并要求用户确认. 当前请求明确 provider 时不重复询问; 每次确认更新该 Creation 的 mutable preference.
+- `FR-GEN-025`: 同一个 Generation Variant 选择多个 provider 时, 每个 provider 创建独立 Generation, 共享一个先行提交的 Prompt Revision 与同一组 Reference Image. 不创建 Generation Group 或聚合终态.
+- `FR-GEN-026`: Multi-provider Workflow 在调用前完成全部 provider preflight; 任一前置失败时不调用任何 provider. 调用后各 provider lane 独立 finalize, 一个 lane 的失败不取消其他已开始的调用.
+- `FR-GEN-027`: Variant count 展开为 `provider count × variant count` 个 Generation. xAI 固定 `n = 1`; 不同 provider lane 并发, 首期同一 provider lane 内 Variant 串行.
+- `FR-GEN-028`: xAI 在无 Reference 时使用 image generation endpoint, 在一至三张 Reference 时使用 multi-reference edit endpoint; 超过三张在 preflight fail closed. Reference 使用 committed Image Asset bytes, 不创建 public URL 或长期 provider file.
+- `FR-GEN-029`: Provider contract 必须支持 heterogeneous executor. OpenAI 使用 Codex built-in tool, xAI 使用 repository-owned direct API command; Archive writer 不依赖具体 SDK、transport 或 host.
+- `FR-GEN-030`: xAI command 必须使用 `b64_json`, 在仓库进程内完成调用、验证、Capture、Finalize、Commit 与 index catch-up. Credential、raw response 和 base64 payload不得经过 Codex context、argv、stdout、telemetry 或 Archive.
+- `FR-GEN-031`: xAI 默认 timeout 为十分钟, repository-local config 只允许一至三十分钟 override. 明确 HTTP failure 为 known failure; request dispatch 后的 timeout、connection loss、truncated response 或无完整 Output 的成功响应为 interrupted. Workflow 不自动 retry 或 fallback.
+- `FR-GEN-032`: Replay 固定源 Generation 的 provider 与已知 model. 跨 provider 使用同一 Prompt Revision 生成属于新的 Generation Variant, 不设置 `replayOfGenerationId`.
+- `FR-GEN-033`: Generation 不保存 provider request ID、API URL、cost、raw usage 或 raw provider metadata. 未来费用管理使用独立 Usage Record 或外部 projection.
+- `FR-GEN-034`: 本期只支持 `openai` 与 `xai`. 系统预留通用 adapter 和 executor boundary, 但不实现 Google AI、Antigravity detection、Google credential、config placeholder 或 UI entry.
 
 ### Transaction and Recovery
 

@@ -25,6 +25,8 @@ function generation(
     replayOfGenerationId: null,
     status: "succeeded",
     outcomeKnown: true,
+    provider: "openai",
+    providerSource: "recorded",
     references: [
       {
         assetSha256: referenceSha256,
@@ -49,6 +51,7 @@ function detail(): CreationDetail {
     tags: [],
     favorite: false,
     note: "",
+    providerPreference: ["openai"],
     entityRevision: 0,
     generationCount: 3,
     imageCount: 0,
@@ -98,6 +101,7 @@ describe("CreationDetailPage provenance focus", () => {
     render(<CreationDetailPage api={api} creationId={creationId} />);
 
     await screen.findByRole("heading", { name: "Prompt History" });
+    expect(screen.getAllByText(/OpenAI · Unknown model/u).length).toBeGreaterThan(0);
     const latestGeneration = document.getElementById(`generation-${generationThreeId}`);
     expect(latestGeneration?.className).toContain("is-focused");
 

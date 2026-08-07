@@ -167,6 +167,19 @@ export function GalleryFilters({
                 />
               </label>
               <label>
+                Provider
+                <input
+                  list="provider-options"
+                  value={draft.provider}
+                  placeholder="openai or xai"
+                  onChange={(event) => setDraft({ ...draft, provider: event.target.value })}
+                />
+                <datalist id="provider-options">
+                  <option value="openai">OpenAI</option>
+                  <option value="xai">Grok / xAI</option>
+                </datalist>
+              </label>
+              <label>
                 Model
                 <input
                   value={draft.model}

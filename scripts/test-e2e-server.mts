@@ -34,6 +34,7 @@ const firstPrepared = prepareGeneration(libraryRoot, fixtureCreationId, {
   basedOnRevisionId: null,
   references: [],
   replayOfGenerationId: null,
+  provider: "openai",
   tool: { name: "fake.imagegen", model: null, parameters: { fixture: true } },
 });
 markInvocationStarted(libraryRoot, firstPrepared.transactionId);
@@ -49,6 +50,7 @@ const secondPrepared = prepareGeneration(libraryRoot, fixtureCreationId, {
   basedOnRevisionId: firstPrepared.revisionId,
   references: [],
   replayOfGenerationId: null,
+  provider: "openai",
   tool: { name: "fake.imagegen", model: null, parameters: { fixture: true, variant: 2 } },
 });
 markInvocationStarted(libraryRoot, secondPrepared.transactionId);
@@ -68,6 +70,7 @@ prepareGeneration(libraryRoot, fixtureCreationId, {
   basedOnRevisionId: secondPrepared.revisionId,
   references: [],
   replayOfGenerationId: null,
+  provider: "openai",
   tool: { name: "fake.imagegen", model: null, parameters: { fixture: true, recovery: true } },
 });
 await rm(generatedPath, { force: true });

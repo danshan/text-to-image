@@ -39,7 +39,8 @@ test("traverses immutable provenance from an image to its creation", async ({ pa
     .click();
   await expect(page.getByRole("heading", { level: 1, name: "Minimal Fixture" })).toBeVisible();
 
-  await page.locator(".relation-card").click();
+  await expect(page.locator(".provenance-section .relation-card")).toHaveCount(2);
+  await page.locator(".provenance-section .relation-card").first().click();
   await expect(page.getByRole("heading", { level: 2, name: "Prompt Revision" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Outputs" })).toBeVisible();
 

@@ -25,17 +25,17 @@ Command:
 npm run assetctl -- generation preflight --creation <creation-id> --request-stdin --format json
 ```
 
-The optional stdin request may contain `sessionImagePaths`, `references`, and `basedOnRevisionId`. The command resolves and validates capabilities and the Library once, then returns the fixed canonical `libraryRoot`, quick validation, Draft snapshot, pending recovery warning, and every source inspection result. It must not create a transaction, import an asset, or write a Commit Marker. Reuse this snapshot for the rest of the workflow; do not repeat resolver, recovery, Draft, or source inspection commands.
+The optional stdin request may contain `sessionImagePaths`, `references`, `basedOnRevisionId`, and already selected `providers`. The command resolves and validates capabilities and the Library once, then returns the fixed canonical `libraryRoot`, quick validation, Draft snapshot, `creationCuration` with Provider Preference and entity revision, `providerCapabilities`, pending recovery warning, and every source inspection result. It must not create a transaction, import an asset, or write a Commit Marker. Reuse this snapshot for the rest of the workflow; do not repeat resolver, recovery, Draft, or source inspection commands.
 
-## Happy-path Begin
+## Happy-path Begin Variant
 
 Command:
 
 ```bash
-npm run assetctl -- generation begin --library <library-root> --creation <creation-id> --request-stdin
+npm run assetctl -- generation begin-variant --library <library-root> --creation <creation-id> --request-stdin
 ```
 
-Begin request 扩展 Prepare request, 并为每个 materialized Session Image 增加 Preflight 返回的 canonical `sourcePath` 与 expected hash:
+Begin Variant request 为每个 materialized Session Image 增加 Preflight 返回的 canonical `sourcePath` 与 expected hash, 并包含用户确认的 Provider invocations:
 
 ```json
 {
@@ -49,22 +49,35 @@ Begin request 扩展 Prepare request, 并为每个 materialized Session Image �
       "guidance": "Preserve subject identity."
     }
   ],
+  "expectedCurationRevision": 3,
   "sessionImages": [
     {
       "sourcePath": "/canonical/source/reference.jpg",
       "expectedAssetSha256": "92b7b13cbeef65f8a258d705e19916a5917865543398eff786c749678a2d820a"
     }
   ],
-  "replayOfGenerationId": null,
-  "tool": {
-    "name": "image_gen.imagegen",
-    "model": null,
-    "parameters": {}
-  }
+  "invocations": [
+    {
+      "provider": "openai",
+      "tool": {
+        "name": "image_gen.imagegen",
+        "model": null,
+        "parameters": {}
+      }
+    },
+    {
+      "provider": "xai",
+      "tool": {
+        "name": "xai.images.generate",
+        "model": "grok-imagine-image-quality",
+        "parameters": {}
+      }
+    }
+  ]
 }
 ```
 
-Begin 复用共享 importer、Prepare、Prompt hash gate 与 Mark primitives. 任一 Session Image actual hash 与 expected hash 不同则返回 `SESSION_IMAGE_CHANGED`; 已提交 import 保留, 不创建或继续 Generation. response 包含 Prepare fields 与按 source index 排列的 imported/reused 结果.
+Begin Variant 在任何 Archive write 前重新验证 Provider availability 与 Reference capability, 再以 `expectedCurationRevision` 更新 Provider Preference, 复用共享 importer, checkpoint 一个 Prompt Revision, 并为每个 Provider 创建独立 prepared Generation transaction. 任一 Session Image actual hash 与 expected hash 不同则返回 `SESSION_IMAGE_CHANGED`; 已提交 import 保留, 不调用 Provider. Response 包含共享 Revision fields、按 Provider 排列的 Generation transaction 与按 source index 排列的 imported/reused 结果.
 
 ## Low-level Prepare and Mark
 
@@ -89,6 +102,7 @@ stdin request:
     }
   ],
   "replayOfGenerationId": null,
+  "provider": "openai",
   "tool": {
     "name": "image_gen.imagegen",
     "model": null,
@@ -115,13 +129,23 @@ stdout response:
 
 `referencePaths` 的顺序必须与 request `references` 一致.
 
-这些 commands 只用于 recovery、diagnostic 与 fault injection. Low-level path 通过 marker command 执行 byte gate:
+`generation prepare` 只用于 Replay、recovery、diagnostic 与 fault injection. Replay 必须固定复制 source Generation 的 `provider`, model、parameters、Prompt 与 References. OpenAI happy path 与所有 low-level invocation 都通过 marker command 执行 byte gate:
 
 ```bash
 npm run assetctl -- generation mark-invocation-started --library <library-root> --transaction <transaction-id> --prompt-sha256 <prompt-sha256> --format json
 ```
 
 The gate must fail closed while the transaction remains `prepared`; the image tool must not be called after a mismatch. `generation verify-prompt` remains available only as a standalone diagnostic or fault-injection command.
+
+## Direct Provider Invocation
+
+Command:
+
+```bash
+npm run assetctl -- generation invoke-provider --library <library-root> --provider xai --transaction <transaction-id> --format json
+```
+
+该 command 只接受由 `generation begin-variant` prepared 且 provider 为 `xai` 的 transaction. CLI 从 process environment 优先读取 `XAI_API_KEY`, 其次读取 ignored repository `.env`; secret 不进入 request payload、argv、Archive 或返回值. 无 Reference 时调用 xAI generations endpoint, 1–3 张时调用 edits endpoint, 固定 `n = 1` 与 `b64_json`, 并完整执行 mark、bounded response decode、Capture、terminal finalize、Commit 与 incremental index catch-up. 明确 HTTP failure 归档 `failed`; transport、timeout、truncated 或 invalid success payload 归档 `interrupted`; 不自动 retry 或 fallback.
 
 ## Session Image Ingress
 

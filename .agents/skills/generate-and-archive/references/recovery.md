@@ -43,3 +43,5 @@ npm run assetctl -- recover quarantine --library <library-root> --transaction <t
 - Commit lock conflict: 有界等待失败后只重试 commit, 不重新生成.
 - Marker 已发布但 index refresh 失败: Generation 已 committed, 报告 `index.status: "degraded"`, 保留 atomic `last_indexed_marker`, 后续只执行 incremental catch-up 或显式 full rebuild, 不重复生成.
 - Prompt SHA-256 gate mismatch: transaction remains `prepared`; do not mark invocation or call the image tool.
+- Multi-provider Variant 的每个 transaction 独立恢复. 一个 Provider 的 failed 或 interrupted 状态不改变同一 Prompt Revision 下其他 Provider Generation 的证据或终态.
+- xAI `generation invoke-provider` 在 mark 前的 credential、model 或 Reference capability failure 保持 `prepared`; mark 后的 transport、timeout、truncated 或 invalid success payload conservatively commits `interrupted`.

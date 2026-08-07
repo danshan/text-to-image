@@ -167,12 +167,22 @@ export async function indexMarker(
     if (record.kind === "generation" || record.path.endsWith("/generation.json")) {
       const value = await readJson(absolutePath);
       const tool = isObject(value.tool) ? value.tool : {};
+      const recordedProvider = nullableString(value, "provider");
+      const provider =
+        recordedProvider ??
+        (stringValue(tool, "name", "unknown") === "image_gen.imagegen" ? "openai" : null);
+      const providerSource = recordedProvider
+        ? "recorded"
+        : provider
+          ? "legacy-derived"
+          : "unknown";
       database
         .prepare(
           `INSERT OR IGNORE INTO generations(
           id, creation_id, prompt_revision_id, replay_of_generation_id, status, outcome_known,
-          tool_name, tool_model, parameters_json, started_at, completed_at, error_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          provider, provider_source, tool_name, tool_model, parameters_json, started_at,
+          completed_at, error_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           stringValue(value, "id"),
@@ -181,6 +191,8 @@ export async function indexMarker(
           nullableString(value, "replayOfGenerationId"),
           stringValue(value, "status"),
           booleanValue(value, "outcomeKnown") ? 1 : 0,
+          provider,
+          providerSource,
           stringValue(tool, "name", "unknown"),
           nullableString(tool, "model"),
           jsonText(tool.parameters, {}),
@@ -316,7 +328,7 @@ async function applyCuration(database: DatabaseSync, root: string): Promise<void
     database
       .prepare(
         `UPDATE creations SET title = ?, status = ?, tags_json = ?, favorite = ?, note = ?,
-        entity_revision = ? WHERE id = ?`,
+        provider_preference_json = ?, entity_revision = ? WHERE id = ?`,
       )
       .run(
         stringValue(value, "title", "Untitled Creation"),
@@ -324,6 +336,7 @@ async function applyCuration(database: DatabaseSync, root: string): Promise<void
         jsonText(value.tags, []),
         booleanValue(value, "favorite") ? 1 : 0,
         stringValue(value, "note"),
+        jsonText(value.providerPreference, []),
         numberValue(value, "entityRevision") ?? 0,
         stringValue(value, "creationId"),
       );

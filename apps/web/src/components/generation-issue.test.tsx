@@ -11,6 +11,8 @@ function generation(overrides: Partial<GenerationView> = {}): GenerationView {
     replayOfGenerationId: null,
     status: "failed",
     outcomeKnown: true,
+    provider: "openai",
+    providerSource: "recorded",
     references: [],
     outputs: [],
     tool: { name: "image_gen.imagegen", model: null, parameters: {} },

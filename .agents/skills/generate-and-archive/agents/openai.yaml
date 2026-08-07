@@ -1,7 +1,7 @@
 interface:
   display_name: "Generate and Archive"
-  short_description: "Generate images and preserve complete local provenance"
-  default_prompt: "Generate images for a Creation and archive every invocation and output."
+  short_description: "Generate with OpenAI or Grok and preserve local provenance"
+  default_prompt: "Generate images for a Creation with confirmed providers and archive every invocation and output."
 
 policy:
   allow_implicit_invocation: false

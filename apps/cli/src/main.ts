@@ -5,6 +5,7 @@ import {
   ArchiveError,
   LIBRARY_FORMAT_VERSION,
   beginGeneration,
+  beginGenerationVariant,
   cancelPreparedTransaction,
   captureGenerationOutput,
   canonicalizePossiblyMissing,
@@ -36,6 +37,7 @@ import {
   recoverCommit,
   recoverFinalizeInterrupted,
   resolveLibrary,
+  resolveProviderConfiguration,
   updateCreationCuration,
   updateDraft,
   updateImageCuration,
@@ -43,6 +45,7 @@ import {
   WorkflowProgress,
   type CreateCreationInput,
   type BeginGenerationRequest,
+  type BeginGenerationVariantRequest,
   type FailGenerationRequest,
   type FinalizeGenerationRequest,
   type GenerationPreflightRequest,
@@ -53,6 +56,11 @@ import {
   ReadModel,
   type IndexCatchUpResult,
 } from "@text-to-image/read-model";
+import {
+  IMAGE_PROVIDER_ADAPTERS,
+  getImageProviderAdapter,
+  resolveProviderInvocationModels,
+} from "./providers.js";
 
 interface ParsedArguments {
   positionals: string[];
@@ -92,6 +100,9 @@ export async function run(argv: string[]): Promise<CliResult> {
         "generation.prepare",
         "generation.preflight",
         "generation.begin",
+        "generation.begin-variant",
+        "generation.invoke-provider",
+        "providers.list",
         "generation.verify-prompt",
         "generation.mark-invocation-started",
         "generation.capture",
@@ -149,6 +160,9 @@ export async function run(argv: string[]): Promise<CliResult> {
 
   const cliPath = stringOption(parsed, "library", false);
   const resolved = resolveLibrary(cliPath ? { cliPath } : {});
+  if (command === "providers" && subcommand === "list") {
+    return success(resolveProviderCapabilities(resolved.gitRoot));
+  }
   if (command === "library" && subcommand === "resolve") {
     return success({ libraryRoot: resolved.libraryRoot });
   }
@@ -264,9 +278,21 @@ export async function run(argv: string[]): Promise<CliResult> {
       : ({} satisfies GenerationPreflightRequest);
     const source = stringOption(parsed, "source", false);
     if (source) request.sessionImagePaths = [...(request.sessionImagePaths ?? []), source];
-    return success(
-      preflightGeneration(resolved.libraryRoot, stringOption(parsed, "creation"), request),
+    const preflight = preflightGeneration(
+      resolved.libraryRoot,
+      stringOption(parsed, "creation"),
+      request,
     );
+    const providerCapabilities = resolveProviderCapabilities(resolved.gitRoot);
+    assertRequestedProviderCapabilities(request, providerCapabilities);
+    if (request.providers?.includes("xai") && (request.references?.length ?? 0) > 3) {
+      throw new ArchiveError(
+        "IMAGE_PROVIDER_CAPABILITY_UNSUPPORTED",
+        "xAI supports at most three Reference Images.",
+        { referenceCount: request.references?.length ?? 0 },
+      );
+    }
+    return success({ ...preflight, providerCapabilities });
   }
   if (command === "generation" && subcommand === "begin") {
     return success(
@@ -276,6 +302,93 @@ export async function run(argv: string[]): Promise<CliResult> {
         await readStdinJson<BeginGenerationRequest>(),
       ),
     );
+  }
+  if (command === "generation" && subcommand === "begin-variant") {
+    const request = await readStdinJson<BeginGenerationVariantRequest>();
+    const providerConfiguration = resolveProviderConfiguration({
+      gitRoot: resolved.gitRoot,
+    }).providers;
+    const resolvedRequest: BeginGenerationVariantRequest = {
+      ...request,
+      invocations: resolveProviderInvocationModels(request.invocations, providerConfiguration),
+    };
+    const providerCapabilities = resolveProviderCapabilities(resolved.gitRoot);
+    assertRequestedProviderCapabilities(
+      { providers: resolvedRequest.invocations.map((invocation) => invocation.provider) },
+      providerCapabilities,
+    );
+    for (const invocation of resolvedRequest.invocations) {
+      const adapter = getImageProviderAdapter(invocation.provider);
+      if (
+        adapter?.maximumReferenceCount !== null &&
+        adapter?.maximumReferenceCount !== undefined &&
+        resolvedRequest.references.length > adapter.maximumReferenceCount
+      ) {
+        throw new ArchiveError(
+          "IMAGE_PROVIDER_CAPABILITY_UNSUPPORTED",
+          "The selected Image Provider does not support this many Reference Images.",
+          { provider: invocation.provider, referenceCount: resolvedRequest.references.length },
+        );
+      }
+    }
+    return success(
+      beginGenerationVariant(
+        resolved.libraryRoot,
+        stringOption(parsed, "creation"),
+        resolvedRequest,
+      ),
+    );
+  }
+  if (command === "generation" && subcommand === "invoke-provider") {
+    const provider = stringOption(parsed, "provider");
+    const adapter = getImageProviderAdapter(provider);
+    if (!adapter || adapter.executorKind !== "direct_api" || !adapter.invoke) {
+      throw new ArchiveError(
+        "IMAGE_PROVIDER_EXECUTOR_UNSUPPORTED",
+        "Only direct API providers can be invoked by assetctl.",
+        { provider },
+      );
+    }
+    const configuration = resolveProviderConfiguration({ gitRoot: resolved.gitRoot }).providers[
+      adapter.id
+    ];
+    if (!configuration.enabled) {
+      throw new ArchiveError("IMAGE_PROVIDER_DISABLED", "xAI is disabled by project config.");
+    }
+    const apiKey = adapter.resolveCredential?.(resolved.gitRoot) ?? null;
+    const invoked = await adapter.invoke(
+      resolved.libraryRoot,
+      stringOption(parsed, "transaction"),
+      {
+        ...(apiKey ? { apiKey } : {}),
+        timeoutSeconds: configuration.timeoutSeconds,
+      },
+    );
+    const readModel = new ReadModel(resolved.libraryRoot);
+    try {
+      let index: IndexCatchUpResult;
+      try {
+        await readModel.open();
+        index = await readModel.catchUp();
+      } catch (error) {
+        const status = await readModel.status().catch(() => null);
+        index = {
+          status: "degraded",
+          processed: 0,
+          total: 0,
+          lagCount: status?.lagCount ?? 0,
+          lastIndexedMarker: status?.lastIndexedMarker ?? null,
+          failedMarker: null,
+          code:
+            status?.code ??
+            (error instanceof IndexCoordinationError ? error.code : "INDEX_REBUILD_FAILED"),
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      return success({ ...invoked, index });
+    } finally {
+      readModel.close();
+    }
   }
   if (command === "generation" && subcommand === "verify-prompt") {
     assertPreparedPromptHash(
@@ -512,6 +625,80 @@ export async function run(argv: string[]): Promise<CliResult> {
   throw new ArchiveError("LIBRARY_CONFIG_INVALID", "Unknown assetctl command.", {
     positionals: parsed.positionals,
   });
+}
+
+function resolveProviderCapabilities(gitRoot: string): {
+  providers: Array<{
+    id: "openai" | "xai";
+    executorKind: "codex_builtin" | "direct_api" | "host";
+    enabled: boolean;
+    available: boolean;
+    defaultModel: string | null;
+    unavailableCode: string | null;
+  }>;
+} {
+  const configuration = resolveProviderConfiguration({ gitRoot }).providers;
+  return {
+    providers: IMAGE_PROVIDER_ADAPTERS.map((adapter) => {
+      const providerConfiguration = configuration[adapter.id];
+      const credentialAvailable =
+        adapter.credentialEnvironmentVariable === null ||
+        Boolean(adapter.resolveCredential?.(gitRoot));
+      const modelAvailable =
+        !adapter.requiresExplicitModel || Boolean(providerConfiguration.defaultModel);
+      const available = providerConfiguration.enabled && credentialAvailable && modelAvailable;
+      return {
+        id: adapter.id,
+        executorKind: adapter.executorKind,
+        enabled: providerConfiguration.enabled,
+        available,
+        defaultModel: providerConfiguration.defaultModel ?? null,
+        unavailableCode: !providerConfiguration.enabled
+          ? "IMAGE_PROVIDER_DISABLED"
+          : !modelAvailable
+            ? "IMAGE_PROVIDER_MODEL_MISSING"
+            : !credentialAvailable
+              ? "IMAGE_PROVIDER_AUTH_MISSING"
+              : null,
+      };
+    }),
+  };
+}
+
+function assertRequestedProviderCapabilities(
+  request: GenerationPreflightRequest,
+  capabilities: ReturnType<typeof resolveProviderCapabilities>,
+): void {
+  for (const provider of request.providers ?? []) {
+    const capability = capabilities.providers.find((candidate) => candidate.id === provider);
+    if (!capability) {
+      throw new ArchiveError(
+        "IMAGE_PROVIDER_EXECUTOR_UNSUPPORTED",
+        "The selected Image Provider has no configured executor.",
+        { provider },
+      );
+    }
+    if (capability.available) continue;
+    if (capability.unavailableCode === "IMAGE_PROVIDER_AUTH_MISSING") {
+      throw new ArchiveError(
+        "IMAGE_PROVIDER_AUTH_MISSING",
+        "The selected Image Provider credential is not configured.",
+        { provider },
+      );
+    }
+    if (capability.unavailableCode === "IMAGE_PROVIDER_DISABLED") {
+      throw new ArchiveError(
+        "IMAGE_PROVIDER_DISABLED",
+        "The selected Image Provider is disabled by project config.",
+        { provider },
+      );
+    }
+    throw new ArchiveError(
+      "IMAGE_PROVIDER_CONFIG_INVALID",
+      "The selected Image Provider has no default model.",
+      { provider },
+    );
+  }
 }
 
 function parseArguments(argv: string[]): ParsedArguments {

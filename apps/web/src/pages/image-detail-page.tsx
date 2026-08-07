@@ -67,17 +67,27 @@ export function ImageDetailPage({ api, sha256 }: { api: ApiClient; sha256: strin
           <section className="provenance-section">
             <span className="eyebrow">Provenance</span>
             <h2>Produced by</h2>
-            {image.producingGeneration ? (
-              <Link to={`/generations/${image.producingGeneration.id}`} className="relation-card">
-                <div>
-                  <code>{image.producingGeneration.id.slice(0, 12)}</code>
-                  <GenerationStatusBadge
-                    status={image.producingGeneration.status}
-                    outcomeKnown={image.producingGeneration.outcomeKnown}
-                  />
-                </div>
-                <span>{formatDate(image.producingGeneration.startedAt)}</span>
-              </Link>
+            {image.producingGenerations.length > 0 ? (
+              <ol className="relation-list">
+                {image.producingGenerations.map((generation) => (
+                  <li key={generation.id}>
+                    <Link to={`/generations/${generation.id}`} className="relation-card">
+                      <div>
+                        <code>{generation.id.slice(0, 12)}</code>
+                        <GenerationStatusBadge
+                          status={generation.status}
+                          outcomeKnown={generation.outcomeKnown}
+                        />
+                      </div>
+                      <span>
+                        {providerLabel(generation.provider)} ·{" "}
+                        {generation.tool.model || "Unknown model"}
+                      </span>
+                      <span>{formatDate(generation.startedAt)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
             ) : (
               <p className="muted-copy">Imported. No producing Generation exists.</p>
             )}
@@ -119,4 +129,10 @@ export function ImageDetailPage({ api, sha256 }: { api: ApiClient; sha256: strin
       </div>
     </div>
   );
+}
+
+function providerLabel(provider: string | null): string {
+  if (provider === "openai") return "OpenAI";
+  if (provider === "xai") return "Grok / xAI";
+  return provider || "Unknown provider";
 }

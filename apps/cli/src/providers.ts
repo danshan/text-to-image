@@ -24,6 +24,7 @@ export interface XaiInvocationOptions {
   timeoutSeconds: number;
   fetch?: typeof globalThis.fetch;
   baseUrl?: string;
+  captureOutput?: typeof captureGenerationOutputBytes;
 }
 
 export interface DirectProviderInvocationResult {
@@ -31,7 +32,15 @@ export interface DirectProviderInvocationResult {
   commitMarkerPath: string;
   generation: GenerationRecord;
   draftUpdated: boolean;
+  diagnostic: DirectProviderInvocationDiagnostic | null;
 }
+
+export type DirectProviderInvocationDiagnostic =
+  | { code: "XAI_TIMEOUT"; stage: "transport" }
+  | { code: "XAI_TRANSPORT_FAILED"; stage: "transport" }
+  | { code: "XAI_RESPONSE_READ_FAILED"; stage: "response_read" }
+  | { code: "XAI_RESPONSE_INVALID"; stage: "response_validation" }
+  | { code: "XAI_OUTPUT_INVALID"; stage: "output_validation" };
 
 export type ProviderExecutorKind = "codex_builtin" | "direct_api" | "host";
 
@@ -103,28 +112,69 @@ export async function invokeXaiGeneration(
   const timeout = setTimeout(() => controller.abort(), options.timeoutSeconds * 1000);
   markInvocationStarted(libraryRoot, transactionId, invocation.promptSha256);
   try {
-    const response = await (options.fetch ?? globalThis.fetch)(
-      `${options.baseUrl ?? XAI_BASE_URL}${endpoint}`,
-      {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
+    let response: Response;
+    try {
+      response = await (options.fetch ?? globalThis.fetch)(
+        `${options.baseUrl ?? XAI_BASE_URL}${endpoint}`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
         },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      },
-    );
-    const responseText = await readBoundedResponseText(response, MAX_RESPONSE_BYTES);
+      );
+    } catch {
+      return commitXaiInterrupted(libraryRoot, transactionId, {
+        code: controller.signal.aborted ? "XAI_TIMEOUT" : "XAI_TRANSPORT_FAILED",
+        stage: "transport",
+      });
+    }
+
+    let responseText: string;
+    try {
+      responseText = await readBoundedResponseText(response, MAX_RESPONSE_BYTES);
+    } catch {
+      return commitXaiInterrupted(
+        libraryRoot,
+        transactionId,
+        controller.signal.aborted
+          ? { code: "XAI_TIMEOUT", stage: "transport" }
+          : { code: "XAI_RESPONSE_READ_FAILED", stage: "response_read" },
+      );
+    }
+    clearTimeout(timeout);
     if (!response.ok) {
       failGeneration(libraryRoot, transactionId, {
         error: normalizedXaiHttpError(response.status, responseText),
       });
-      return commitGeneration(libraryRoot, transactionId);
+      return { ...commitGeneration(libraryRoot, transactionId), diagnostic: null };
     }
-    const outputs = parseXaiOutputs(responseText);
+
+    let outputs: Buffer[];
+    try {
+      outputs = parseXaiOutputs(responseText);
+    } catch {
+      return commitXaiInterrupted(libraryRoot, transactionId, {
+        code: "XAI_RESPONSE_INVALID",
+        stage: "response_validation",
+      });
+    }
+
+    try {
+      outputs.forEach((bytes, index) => inspectImage(bytes, `xai-output-${index}`));
+    } catch {
+      return commitXaiInterrupted(libraryRoot, transactionId, {
+        code: "XAI_OUTPUT_INVALID",
+        stage: "output_validation",
+      });
+    }
+
+    const captureOutput = options.captureOutput ?? captureGenerationOutputBytes;
     outputs.forEach((bytes, index) =>
-      captureGenerationOutputBytes(libraryRoot, transactionId, bytes, `xai-output-${index}.png`),
+      captureOutput(libraryRoot, transactionId, bytes, `xai-output-${index}`),
     );
     completeGeneration(libraryRoot, transactionId, {
       toolResult: {
@@ -133,17 +183,27 @@ export async function invokeXaiGeneration(
         outputCount: outputs.length,
       },
     });
-    return commitGeneration(libraryRoot, transactionId);
-  } catch (error) {
-    const state = readTransaction(libraryRoot, transactionId).state;
-    if (state === "invocation_started" || state === "outputs_captured") {
-      finalizeGenerationInterrupted(libraryRoot, transactionId);
-      return commitGeneration(libraryRoot, transactionId);
-    }
-    throw error;
+    return { ...commitGeneration(libraryRoot, transactionId), diagnostic: null };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function commitXaiInterrupted(
+  libraryRoot: string,
+  transactionId: string,
+  diagnostic: DirectProviderInvocationDiagnostic,
+): DirectProviderInvocationResult {
+  const transaction = readTransaction(libraryRoot, transactionId);
+  if (transaction.state !== "invocation_started") {
+    throw new ArchiveError(
+      "TRANSACTION_INVALID_STATE",
+      "Provider uncertainty can only finalize before Archive Output capture.",
+      { transactionId, state: transaction.state },
+    );
+  }
+  finalizeGenerationInterrupted(libraryRoot, transactionId);
+  return { ...commitGeneration(libraryRoot, transactionId), diagnostic };
 }
 
 export const IMAGE_PROVIDER_ADAPTERS: readonly ImageProviderAdapter[] = [

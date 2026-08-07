@@ -96,7 +96,7 @@ Grok / xAI lane 启动 repository-owned end-to-end executor. API key 只能由 C
 npm run assetctl -- generation invoke-provider --library <library-root> --provider xai --transaction <transaction-id> --format json
 ```
 
-xAI 无 Reference 时使用 generation endpoint, 1–3 张 Reference 时使用 edit transport endpoint, 但 Archive 领域中仍是普通 Generation. Executor 固定 `n = 1`, 请求 `b64_json`, 自行 mark、decode、validate、capture、finalize、commit 与 index catch-up.
+xAI 无 Reference 时使用 generation endpoint, 1–3 张 Reference 时使用 edit transport endpoint, 但 Archive 领域中仍是普通 Generation. Executor 固定 `n = 1`, 请求 `b64_json`, 自行 mark、decode、validate、capture、finalize、commit 与 index catch-up. `interrupted` result 的 optional `diagnostic` 只报告 stable code 与 stage; 不扩写、猜测或保存底层错误.
 
 一次调用只对应当前 `generationId`. 任一 Provider failure 不取消已经开始的其他 Provider lane. 如果用户要求多个 Variant, 每个 Provider lane 必须等待自己的前一 Variant 达到终态或明确 recovery 状态; 不同 Provider 之间仍可并行.
 
@@ -136,6 +136,7 @@ Output-stage Safety Rejection 必须表述为生成结果被拒绝, 不得断言
 - Reference Image roles 与 guidance 摘要.
 - 每个 Session Image 的 source index、imported 或 reused 状态与最终 Image Asset SHA-256; 不暴露 opaque internal handle.
 - Draft concurrent edit, index degraded, quality observation 或 recovery warning.
+- xAI `interrupted` result 返回的 bounded diagnostic code 与 stage; 不报告 raw error、response body、request ID 或 secret.
 - `workflowRunId`, observed stage durations and the two-layer SLO result. Codex UI duration 是用户端到端权威值; 未暴露时报告 `unknown`, 不从 repository spans 推测. Report real stages and elapsed time only; without provider progress events, do not print percentage or ETA. A wait longer than 60 seconds may print a heartbeat with elapsed duration.
 - Draft 正文保持用户编写的原文和语言; effective Prompt 仅通过 Prompt Revision 报告.
 

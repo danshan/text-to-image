@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 19
+Phase 20
 
 ## Phases
 
@@ -337,9 +337,27 @@ Phase 19
 15. Web 在 Generation Detail、Creation Timeline 与 Image Detail 显示 provider/model, Gallery 增加 provider filter; Image Card 不显示可能误导的单一 provider badge.
 16. 本期只实现 `openai` 与 `xai`; Google AI 与 Antigravity 只保留抽象扩展方向, 不实现 placeholder、credential 或 UI entry.
 
+### Phase 20: xAI Interrupted Diagnostics
+
+- [x] 复盘真实 xAI `interrupted` Generation, 核对 Archive evidence、当前 API contract 与 endpoint 连通性.
+- [x] 定义不进入 Archive 的 bounded direct-provider diagnostic contract.
+- [x] 拆分 transport、response read、response validation 与 Output validation 错误边界.
+- [x] 补充 focused integration tests, 保证 repository capture/commit error 不被误分类.
+- [x] 同步 Generation Workflow、测试策略、repository Skill 与执行记录.
+- [x] 执行 focused 与 root verification, 完成交叉检查.
+- **Status:** completed
+
+#### Confirmed Contract
+
+1. Generation 的持久化终态保持 `interrupted`, `outcomeKnown: false`; 不修改 format `1` Schema 或历史 Archive record.
+2. `assetctl generation invoke-provider` 可以返回非持久化、bounded、无 secret 的 diagnostic, 只包含 stable code 与 stage.
+3. transport、timeout、response read、response validation 与 Output validation 必须可区分; 不返回 raw error、response body、request ID、API URL 或本机 path.
+4. repository-owned Capture、Finalize、Commit 与 index error 不得被 provider uncertainty catch 吞掉或误报.
+5. 测试使用 mock HTTP/fetch, 不自动发起新的真实 xAI 付费 Generation.
+
 ## Remaining Design Questions
 
-无. Phase 19 已完成实现与 root verification. Phase 17 仍剩余异步 maintenance progress、完整 phase failpoint、安全故障矩阵与 browser E2E.
+无. Phase 20 的 diagnostic contract 已由真实故障证据与现有安全边界确定. Phase 17 仍剩余异步 maintenance progress、完整 phase failpoint、安全故障矩阵与 browser E2E.
 
 ## Errors Encountered
 
@@ -408,3 +426,5 @@ Phase 19
 | Phase 18 worker still treated read-model Schema `1` as the only usable version  |       1 | Compare against exported `READ_MODEL_VERSION` after the v2 upgrade  |
 | E2E assumed one produced-by relation and retained pre-provider visual baselines |       1 | Select one of both valid relations and refresh inspected snapshots  |
 | Provider model resolution patch used pre-Prettier import context                |       1 | Re-read exact imports and apply the adapter change in smaller hunks |
+| Hook rejected indirect `node -e` package script inspection                      |       1 | Read `package.json` directly with a simple source-tree command      |
+| Final build could not correlate diagnostic code and stage ternaries             |       1 | Use an explicit discriminated-union branch                          |

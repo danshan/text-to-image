@@ -232,6 +232,7 @@ describe("Phase 19 multi-provider archive contracts", () => {
         status: "succeeded",
         tool: { model: "grok-imagine-image-quality" },
       });
+      expect(result.diagnostic).toBeNull();
       expect(JSON.stringify(result)).not.toContain("test-key");
     } finally {
       if (server?.listening) {
@@ -379,6 +380,7 @@ describe("Phase 19 multi-provider archive contracts", () => {
         outcomeKnown: true,
         error: { code: "IMAGE_PROVIDER_RATE_LIMITED", retryable: true },
       });
+      expect(rateLimited.diagnostic).toBeNull();
 
       const interrupted = await invokeXaiGeneration(libraryRoot, begin().transactionId, {
         apiKey: "test-key",
@@ -390,7 +392,121 @@ describe("Phase 19 multi-provider archive contracts", () => {
         outcomeKnown: false,
         error: { code: "GENERATION_OUTCOME_UNKNOWN" },
       });
+      expect(interrupted.diagnostic).toEqual({
+        code: "XAI_TRANSPORT_FAILED",
+        stage: "transport",
+      });
       expect(JSON.stringify(interrupted)).not.toContain("secret details");
+
+      const responseReadFailed = await invokeXaiGeneration(libraryRoot, begin().transactionId, {
+        apiKey: "test-key",
+        timeoutSeconds: 60,
+        fetch: () =>
+          Promise.resolve(
+            new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.error(new Error("response stream failed with secret details"));
+                },
+              }),
+              { status: 200 },
+            ),
+          ),
+      });
+      expect(responseReadFailed.diagnostic).toEqual({
+        code: "XAI_RESPONSE_READ_FAILED",
+        stage: "response_read",
+      });
+      expect(JSON.stringify(responseReadFailed)).not.toContain("secret details");
+
+      const responseInvalid = await invokeXaiGeneration(libraryRoot, begin().transactionId, {
+        apiKey: "test-key",
+        timeoutSeconds: 60,
+        fetch: () => Promise.resolve(new Response("{}", { status: 200 })),
+      });
+      expect(responseInvalid.diagnostic).toEqual({
+        code: "XAI_RESPONSE_INVALID",
+        stage: "response_validation",
+      });
+
+      const outputInvalid = await invokeXaiGeneration(libraryRoot, begin().transactionId, {
+        apiKey: "test-key",
+        timeoutSeconds: 60,
+        fetch: () =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                data: [{ b64_json: Buffer.from("not an image").toString("base64") }],
+              }),
+              { status: 200 },
+            ),
+          ),
+      });
+      expect(outputInvalid.diagnostic).toEqual({
+        code: "XAI_OUTPUT_INVALID",
+        stage: "output_validation",
+      });
+
+      const timeout = await invokeXaiGeneration(libraryRoot, begin().transactionId, {
+        apiKey: "test-key",
+        timeoutSeconds: 0.01,
+        fetch: (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            if (!signal) throw new Error("Expected an abort signal.");
+            signal.addEventListener("abort", () =>
+              reject(new Error("timed out with secret details")),
+            );
+          }),
+      });
+      expect(timeout.diagnostic).toEqual({ code: "XAI_TIMEOUT", stage: "transport" });
+      expect(JSON.stringify(timeout)).not.toContain("secret details");
+
+      const responseTimeout = await invokeXaiGeneration(libraryRoot, begin().transactionId, {
+        apiKey: "test-key",
+        timeoutSeconds: 0.01,
+        fetch: (_input, init) => {
+          const signal = init?.signal;
+          if (!signal) throw new Error("Expected an abort signal.");
+          return Promise.resolve(
+            new Response(
+              new ReadableStream({
+                start(controller) {
+                  signal.addEventListener("abort", () =>
+                    controller.error(new Error("response timed out with secret details")),
+                  );
+                },
+              }),
+              { status: 200 },
+            ),
+          );
+        },
+      });
+      expect(responseTimeout.diagnostic).toEqual({
+        code: "XAI_TIMEOUT",
+        stage: "transport",
+      });
+      expect(JSON.stringify(responseTimeout)).not.toContain("secret details");
+
+      const captureFailure = begin();
+      await expect(
+        invokeXaiGeneration(libraryRoot, captureFailure.transactionId, {
+          apiKey: "test-key",
+          timeoutSeconds: 60,
+          fetch: () =>
+            Promise.resolve(
+              new Response(JSON.stringify({ data: [{ b64_json: PNG_1X1.toString("base64") }] }), {
+                status: 200,
+              }),
+            ),
+          captureOutput: () => {
+            throw new Error("repository capture failed");
+          },
+        }),
+      ).rejects.toThrow("repository capture failed");
+      expect(readTransaction(libraryRoot, captureFailure.transactionId).state).toBe(
+        "invocation_started",
+      );
     } finally {
       rmSync(owner, { recursive: true, force: true });
     }

@@ -147,6 +147,24 @@ npm run assetctl -- generation invoke-provider --library <library-root> --provid
 
 该 command 只接受由 `generation begin-variant` prepared 且 provider 为 `xai` 的 transaction. CLI 从 process environment 优先读取 `XAI_API_KEY`, 其次读取 ignored repository `.env`; secret 不进入 request payload、argv、Archive 或返回值. 无 Reference 时调用 xAI generations endpoint, 1–3 张时调用 edits endpoint, 固定 `n = 1` 与 `b64_json`, 并完整执行 mark、bounded response decode、Capture、terminal finalize、Commit 与 incremental index catch-up. 明确 HTTP failure 归档 `failed`; transport、timeout、truncated 或 invalid success payload 归档 `interrupted`; 不自动 retry 或 fallback.
 
+Success 与 known HTTP failure 返回 `diagnostic: null`. `interrupted` 返回 non-Archive bounded diagnostic:
+
+```json
+{
+  "committed": true,
+  "generation": {
+    "status": "interrupted",
+    "outcomeKnown": false
+  },
+  "diagnostic": {
+    "code": "XAI_RESPONSE_INVALID",
+    "stage": "response_validation"
+  }
+}
+```
+
+`code` 只允许 `XAI_TIMEOUT`, `XAI_TRANSPORT_FAILED`, `XAI_RESPONSE_READ_FAILED`, `XAI_RESPONSE_INVALID` 与 `XAI_OUTPUT_INVALID`. `stage` 只允许 `transport`, `response_read`, `response_validation` 与 `output_validation`. Result 不返回 raw error、response body、request ID、API URL、credential 或本机 path. 全部 provider Output 必须先完成 Image inspection, 再进入共享 Capture; Capture、Finalize、Commit 与 index error 原样向上返回并保留 recovery state.
+
 ## Session Image Ingress
 
 Session Image 具有可读本地 path 时, 先对全部 source 执行只读 inspection:

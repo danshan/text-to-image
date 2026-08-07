@@ -2,7 +2,7 @@
 title: Product Requirements
 status: draft
 owner: project
-last_updated: 2026-08-06
+last_updated: 2026-08-08
 related:
   - ../../CONTEXT.md
   - ../design/asset-library.md
@@ -12,6 +12,7 @@ related:
   - ../adr/0011-allow-configurable-trusted-lan-binding.md
   - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
   - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
+  - ../adr/0014-use-provider-scoped-generations-with-heterogeneous-executors.md
 ---
 
 # 产品需求
@@ -173,7 +174,7 @@ related:
 - `FR-GEN-028`: xAI 在无 Reference 时使用 image generation endpoint, 在一至三张 Reference 时使用 multi-reference edit endpoint; 超过三张在 preflight fail closed. Reference 使用 committed Image Asset bytes, 不创建 public URL 或长期 provider file.
 - `FR-GEN-029`: Provider contract 必须支持 heterogeneous executor. OpenAI 使用 Codex built-in tool, xAI 使用 repository-owned direct API command; Archive writer 不依赖具体 SDK、transport 或 host.
 - `FR-GEN-030`: xAI command 必须使用 `b64_json`, 在仓库进程内完成调用、验证、Capture、Finalize、Commit 与 index catch-up. Credential、raw response 和 base64 payload不得经过 Codex context、argv、stdout、telemetry 或 Archive.
-- `FR-GEN-031`: xAI 默认 timeout 为十分钟, repository-local config 只允许一至三十分钟 override. 明确 HTTP failure 为 known failure; request dispatch 后的 timeout、connection loss、truncated response 或无完整 Output 的成功响应为 interrupted. Workflow 不自动 retry 或 fallback.
+- `FR-GEN-031`: xAI 默认 timeout 为十分钟, repository-local config 只允许一至三十分钟 override. 明确 HTTP failure 为 known failure; request dispatch 后的 timeout、connection loss、truncated response 或无完整 Output 的成功响应为 interrupted. CLI 必须为 interrupted 返回无 secret 的 bounded diagnostic code 与 stage, 但不写入 Archive. Output validation 后的 Capture、Finalize、Commit 与 index error 必须保留 repository recovery evidence, 不得误分类为 provider uncertainty. Workflow 不自动 retry 或 fallback.
 - `FR-GEN-032`: Replay 固定源 Generation 的 provider 与已知 model. 跨 provider 使用同一 Prompt Revision 生成属于新的 Generation Variant, 不设置 `replayOfGenerationId`.
 - `FR-GEN-033`: Generation 不保存 provider request ID、API URL、cost、raw usage 或 raw provider metadata. 未来费用管理使用独立 Usage Record 或外部 projection.
 - `FR-GEN-034`: 本期只支持 `openai` 与 `xai`. 系统预留通用 adapter 和 executor boundary, 但不实现 Google AI、Antigravity detection、Google credential、config placeholder 或 UI entry.

@@ -155,6 +155,16 @@
 - Gallery 的 Provider filter 不能只依赖 `assets.generation_id`, 因为 content-addressed Output 可能由多个 Generation 复用. 使用 `generation_outputs` 与 `generations` 的 `EXISTS` relation 才能覆盖所有 produced-by provenance.
 - Repository root `.env` 原先未被 `.gitignore` 覆盖. 既然 xAI executor 明确支持该 secret source, 必须新增 exact root ignore rule, 同时保留 `.env.example` 作为无 secret 模板.
 
+## Phase 20 xAI Interrupted Diagnostic Findings
+
+- 真实 xAI Generation `661a9b1d-9065-467b-886f-dd2544be060a` 在约 7.8 秒内从 `invocation_started` 提交为 `interrupted`; credential 与 model preflight 已通过, 600 秒 timeout 未触发.
+- 当前 xAI 官方 contract 仍使用 `POST /v1/images/generations`、`grok-imagine-image-quality`、`response_format: b64_json` 与 `response.data[0].b64_json`; 请求和成功响应字段没有发现漂移.
+- 当前 endpoint 的无 credential 连通性探测在约 0.9 秒返回预期 `401`; 这只能证明当前网络可达, 不能还原历史调用的瞬时 transport 状态.
+- `invokeXaiGeneration` 的单一 `try/catch` 同时覆盖 fetch、response read、JSON/base64 parse、Image inspection、Archive Capture、Finalize 与 Commit. 它丢弃原始异常并把前两个 transaction state 的所有错误归一化为 `GENERATION_OUTCOME_UNKNOWN`, 因而无法区分 provider uncertainty 与 repository implementation failure.
+- 安全边界不要求把 provider raw error 写入 Archive. 正确做法是在 CLI 的 ephemeral normalized result 中返回 stable diagnostic code 与 stage, 同时保持 immutable Generation 的 generic interrupted contract.
+- Output bytes 必须在任何 Capture 前全部完成 Image inspection, 避免多 Output 中后项无效时留下部分 staged Output. Capture、Finalize 与 Commit 开始后只允许 repository error 原样上抛.
+- provider timeout 必须在完整 response body 读取后立即清除, 不能覆盖后续 Archive Capture/Commit span; timeout 在 headers 后、body 读取期间触发时仍归类为 `XAI_TIMEOUT`.
+
 ## Research Findings
 
 - Codex 官方手册说明 `AGENTS.md` 是持久仓库指令, 仓库内较近层级覆盖较远层级.

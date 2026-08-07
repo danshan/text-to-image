@@ -2,13 +2,14 @@
 title: Generation Workflow Design
 status: draft
 owner: project
-last_updated: 2026-08-05
+last_updated: 2026-08-08
 related:
   - ../../CONTEXT.md
   - asset-library.md
   - ../adr/0002-enforce-the-archive-with-repository-owned-controls.md
   - ../adr/0006-commit-generations-atomically.md
   - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
+  - ../adr/0014-use-provider-scoped-generations-with-heterogeneous-executors.md
   - purge-workflow.md
 ---
 
@@ -95,6 +96,8 @@ MVP 不支持:
 - xAI command 在 `invocation_started` 后中断时保留现有 recovery state. 已捕获 Output 可以从 `outputs_captured` 继续 finalize; 未获得可验证 Output 时保持 uncertain outcome, 不伪造 success 或再次调用 provider.
 - xAI direct invocation 的默认 timeout 为十分钟, 只覆盖 provider HTTP span. Repository-local non-secret config 可以按 provider 覆盖, 首期限制为一至三十分钟.
 - 明确的 HTTP `4xx`、`5xx` 与 provider Safety Rejection 是 `failed`, `outcomeKnown: true`; 其中 rate limit 和 server failure 可以标记 retryable, 但 Workflow 不自动 retry. 请求发出后的 client timeout、connection reset、response truncation, 以及缺少完整可验证 Output 的 `200` response 是 `interrupted`, `outcomeKnown: false`.
+- xAI `interrupted` Generation 在 immutable Archive 中继续只保存 generic unknown-outcome error. `generation invoke-provider` 的 ephemeral result 额外返回 `diagnostic: { code, stage }`, bounded code 只允许 `XAI_TIMEOUT`, `XAI_TRANSPORT_FAILED`, `XAI_RESPONSE_READ_FAILED`, `XAI_RESPONSE_INVALID` 或 `XAI_OUTPUT_INVALID`; stage 只允许 `transport`, `response_read`, `response_validation` 或 `output_validation`. 该 diagnostic 不包含 raw error、response body、request ID、API URL、credential 或本机 path, 也不进入 Archive.
+- provider uncertainty boundary 结束于 Output validation. 全部 Output 必须先通过 Image inspection, 再进入共享 Capture. Capture、Finalize、Commit 与 index error 属于 repository execution failure, 必须保留 recovery state 并向上返回, 不得被归一化为 provider `interrupted`.
 - Provider failure 不触发 fallback 或取消其他已开始的 lane. 用户显式 retry 创建新的 Generation. 等待超过六十秒只报告 provider 与累计时间 heartbeat, 不生成百分比或 ETA.
 - Web Generation Detail 显示 Provider、Model、Tool、Parameters 与 `recorded | legacy-derived` provenance source. Creation Timeline 使用紧凑 provider/model badge, Image Detail 在每条 produced-by Generation relation 上显示相同事实.
 - Gallery query 增加 provider filter, model filter 继续使用实际 model identity. Gallery Image Card 不显示单一 provider badge, 因为一个 content-addressed Image Asset 可能具有多个 Output provenance. Legacy 和 unknown facts 必须明确标识, 不用当前默认 model 回填历史.
@@ -406,6 +409,8 @@ Hook 永远不写资产、不自动 repair、不清理 staging. 因为某些工�
 
 - built-in tool unavailable: finalize known failure if tool明确返回失败; 不自动切换 CLI fallback.
 - safety moderation rejection: 使用 stable error code 和 optional moderation metadata 归档 `failed`; 保留 Prompt Revision, 不自动改写或重试.
+- xAI transport、response read、response validation 或 Output validation failure: 归档 `interrupted`, 并在当前 CLI result 返回 bounded diagnostic code 与 stage; 不持久化底层异常.
+- xAI Capture、Finalize、Commit 或 index failure: 保留当前 repository recovery evidence 并返回原有 typed error; 不用 `GENERATION_OUTCOME_UNKNOWN` 覆盖.
 - Codex loses result after invocation: recovery 为 `interrupted`, outcome unknown.
 - Output path inaccessible: 保留 transaction, 请求所需权限或显式 recovery.
 - Reference Asset changed on disk: hash validation 失败, 拒绝调用并报告 Archive corruption.

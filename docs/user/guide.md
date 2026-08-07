@@ -2,7 +2,7 @@
 title: User Guide
 status: draft
 owner: project
-last_updated: 2026-08-06
+last_updated: 2026-08-08
 related:
   - ../product/requirements.md
   - ../design/generation-workflow.md
@@ -356,7 +356,7 @@ Purge 执行后进入 maintenance progress 页面. Cutover 前失败不会改变
 
 ### 8.2 interrupted
 
-`interrupted` 表示工具调用已经开始, 但系统无法确认最终结果. 这时不要立即重复生成. 进入 `Recovery` 页面检查 staged transaction, 按页面提供的预览和动作处理.
+`interrupted` 表示工具调用已经开始, 但系统无法确认最终结果. 对 Grok / xAI, Codex 还会报告当前调用返回的 bounded diagnostic code 与 stage, 用于区分 timeout、transport、response read、response validation 或 Output validation; 它不包含 provider raw error 或 secret, 也不会写入永久 Archive. 这时不要立即重复生成. 进入 `Recovery` 页面检查 staged transaction, 按页面提供的预览和动作处理.
 
 ### 8.3 Recovery 页面
 

@@ -476,6 +476,30 @@
   - `git diff --check`: passed.
   - 真实 xAI smoke 未运行; 它保持 explicit opt-in external-cost test.
 
+### Phase 20: xAI Interrupted Diagnostics
+
+- **Status:** completed
+- 已完成:
+  - 复盘真实 xAI interrupted Generation, 确认没有 Output、不是 600 秒 timeout, 且现有 Archive 只保留 generic `GENERATION_OUTCOME_UNKNOWN`.
+  - 使用 Context7 核对当前 xAI image generation endpoint、model、`b64_json` request 与 `data[].b64_json` response contract.
+  - 运行 Phase 19 focused integration, 1 file / 7 tests passed.
+  - 对 xAI endpoint 执行无 credential 连通性探测, 返回预期 `401`, connect 约 35 ms, total 约 0.9 s.
+  - 确认根因诊断被 `invokeXaiGeneration` 的宽泛 catch 丢失, 并确定 bounded ephemeral diagnostic contract.
+- 本轮实现:
+  - `invokeXaiGeneration` 分离 transport、response read、response validation、Output validation 与 repository execution boundary.
+  - `generation invoke-provider` result 新增 `diagnostic`, success 与 known HTTP failure 为 `null`, interrupted 只返回 stable code 与 stage.
+  - 全部 decoded Output 在任何 Capture 前完成 Image inspection; Capture、Finalize 与 Commit error 不再被宽泛 catch 吞掉.
+  - provider timeout 在 response body 完整读取后立即清除, fetch 等待与 response body 读取期间的 abort 都稳定返回 `XAI_TIMEOUT`.
+  - focused integration 覆盖 success、known HTTP failure、transport、timeout、response stream failure、invalid response、invalid Output 与 injected Capture failure, 1 file / 7 tests passed.
+  - 同步 Generation Workflow、产品需求、测试策略、用户手册、repository Skill、CLI contract 与 recovery contract.
+- 最终验证:
+  - `npm run build`, `npm run typecheck`, `npm run lint` 与 `npm run format:check`: passed.
+  - `npm test`: 5 root files / 19 tests、32 Hook/Skill tests 与 12 Web files / 27 tests passed.
+  - `npm run test:integration`: 10 files / 73 tests passed outside sandbox, 包含更新后的 xAI mock HTTP 与 response-body timeout coverage.
+  - `npm run docs:check`: 37 Markdown files / 14 ADRs passed.
+  - `git diff --check`: passed.
+  - 未运行真实 xAI Generation; 本轮没有自动 retry 或产生新的 provider cost.
+
 ### Phase 17 Follow-up: Reference Lifecycle and Purge Confirmation
 
 - 已确认:
@@ -516,8 +540,8 @@
 | Dependency audit                    | No known registry advisories                                                        | 0 vulnerabilities across 480 dependencies                                                      | pass   |
 | Root build                          | Every production module compiles                                                    | API contract、Archive、read model、CLI、Server and 57-module Web build passed                  | pass   |
 | Static quality                      | TypeScript、ESLint and Prettier are clean                                           | `typecheck`, `lint` and `format:check` passed                                                  | pass   |
-| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 5 root files / 19 tests, 31 Hook/Skill tests and 26 Web tests passed                           | pass   |
-| Integration                         | Archive、read model、HTTP security and daemon lifecycle pass                        | 9 files, 64 tests passed                                                                       | pass   |
+| Unit and contract                   | Hook、Skill and Web behavior is stable                                              | 5 root files / 19 tests, 32 Hook/Skill tests and 27 Web tests passed                           | pass   |
+| Integration                         | Archive、read model、HTTP security and daemon lifecycle pass                        | 10 files, 73 tests passed                                                                      | pass   |
 | Browser E2E                         | Chromium and WebKit cover the accepted UI slice and desktop visual baselines        | 13 passed, 1 intentional WebKit mutation skip; Gallery 1024 and Creation 1440 snapshots passed | pass   |
 | Warm thumbnail                      | First screen is interactive within 2 seconds                                        | Chromium 991 ms, WebKit 1.9 s                                                                  | pass   |
 | Full-scale rebuild                  | 2,000 / 30,000 / 10,000 rebuild <= 60 s                                             | 10,841 ms                                                                                      | pass   |
@@ -525,7 +549,7 @@
 | Fixture validation                  | Legal and illegal fixtures match expectations                                       | 2 of 2 matched                                                                                 | pass   |
 | External Library                    | Resolver、Generation、Commit、validate and index rebuild work outside repo          | Temporary external Library reached lagCount 0 and full validation passed                       | pass   |
 | Generation workflow                 | 12 deterministic runs satisfy the repository non-model budget                       | pre-tool p95 105.15 ms, post-tool p95 224.51 ms, non-model p95 329.66 ms                       | pass   |
-| Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 36 Markdown files and 13 ADRs passed                                                           | pass   |
+| Documentation structural validation | Links, JSON fences, frontmatter, ADR sequence, punctuation and whitespace are valid | 37 Markdown files and 14 ADRs passed                                                           | pass   |
 | Library selection and merge         | Config persistence、dry-run、atomic apply、conflict and recovery are correct        | Archive and read model integration coverage passed                                             | pass   |
 
 ## Error Log
@@ -559,13 +583,15 @@
 | 2026-08-04 | Direct workspace test excluded read model integration files          |       1 | Used the root integration Vitest config with the exact test path  |
 | 2026-08-04 | Playwright browser launch was denied by the macOS sandbox            |       1 | Re-ran the scoped browser suite outside the sandbox               |
 | 2026-08-04 | E2E Prompt Compare assertion used the removed hidden label           |       1 | Asserted visible `Compare` and reran Chromium and WebKit          |
+| 2026-08-08 | Hook rejected indirect `node -e` package script inspection           |       1 | Read `package.json` directly with a simple source-tree command    |
+| 2026-08-08 | Build could not correlate diagnostic code and stage ternaries        |       1 | Used an explicit discriminated-union branch                       |
 
 ## 5-Question Reboot Check
 
-| Question             | Answer                                                                                                      |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Where am I?          | Phase 17 core Purge vertical slice implemented and focused tests passing; hardening remains pending         |
-| Where am I going?    | Add async maintenance progress, complete failpoint/security coverage, then run root verification            |
-| What is the goal?    | Add safe, irreversible single-target Creation and Image Asset Purge to the local Asset Library              |
-| What have I learned? | See `findings.md`                                                                                           |
-| What have I done?    | Landed domain, schemas, shared replacement writer, CLI, API, Web Danger Zones and focused integration tests |
+| Question             | Answer                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Where am I?          | Phase 20 xAI interrupted diagnostics completed and fully verified; Phase 17 hardening remains pending        |
+| Where am I going?    | Resume Phase 17 async maintenance progress, failpoint/security coverage and browser verification             |
+| What is the goal?    | Preserve xAI uncertainty safely while returning actionable bounded diagnostics outside immutable Archive     |
+| What have I learned? | See `findings.md`                                                                                            |
+| What have I done?    | Split xAI provider failure stages, protected repository errors, updated tests and synchronized documentation |

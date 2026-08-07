@@ -2,7 +2,7 @@
 title: Testing Strategy
 status: draft
 owner: project
-last_updated: 2026-08-06
+last_updated: 2026-08-08
 related:
   - ../product/requirements.md
   - ../design/asset-library.md
@@ -14,6 +14,7 @@ related:
   - ../adr/0012-keep-workflow-telemetry-out-of-the-archive.md
   - ../design/purge-workflow.md
   - ../adr/0013-rebuild-and-replace-the-library-for-purge.md
+  - ../adr/0014-use-provider-scoped-generations-with-heterogeneous-executors.md
 ---
 
 # 测试策略
@@ -49,7 +50,8 @@ related:
 - Prompt Revision parent validation 与 cycle detection.
 - Generation terminal status combinations.
 - Provider registry、Provider Preference revision guard、tracked/local config merge 与 credential precedence.
-- xAI endpoint selection、bounded `b64_json` decode、known HTTP failure 与 uncertain transport failure normalization.
+- xAI endpoint selection、bounded `b64_json` decode、known HTTP failure, 以及 timeout、transport、response read、response validation 与 Output validation 的 bounded interrupted diagnostic.
+- xAI repository boundary: 全部 Output validation 先于 Capture; Capture、Finalize 与 Commit error 必须向上返回并保留 recovery state, 不得被 provider uncertainty catch 吞掉.
 - Safety Rejection error mapping、moderation stage 与 category preservation.
 - Replay relation.
 - transaction state transitions.
@@ -94,7 +96,7 @@ JSON examples embedded in正式文档必须被提取并解析; 标记为 illustr
 - content deduplication.
 - create Creation、checkpoint Revision、Generation success/failure/interrupted.
 - 一个 Variant checkpoint 一个共享 Prompt Revision, 并为每个 Provider 创建独立 Generation transaction.
-- mock xAI HTTP server generation success、Reference edit mapping、credential pre-mark failure 与 independent recovery.
+- mock xAI HTTP server generation success、Reference edit mapping、credential pre-mark failure、bounded interrupted diagnostic、repository capture failure 与 independent recovery.
 - Commit Marker publication 和 reader visibility.
 - uncommitted final object detection.
 - cache delete/rebuild.
